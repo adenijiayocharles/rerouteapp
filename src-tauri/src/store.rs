@@ -50,7 +50,7 @@ fn now() -> String {
 
 fn human_time(iso: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(iso)
-        .map(|dt| dt.format("%b %-d, %-I:%M %p").to_string())
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%b %-d, %-I:%M %p").to_string())
         .unwrap_or_else(|_| iso.to_string())
 }
 
