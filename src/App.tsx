@@ -14,6 +14,11 @@ import { Toast } from "./components/Toast";
 import { ReloadBanner } from "./components/ReloadBanner";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
+const THEME_STORAGE_KEY = "hosts-manager-theme";
+
+function loadStoredTheme(): Theme {
+  return localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+}
 
 interface State {
   theme: Theme;
@@ -68,7 +73,7 @@ type Action =
   | { type: "DISMISS_EXTERNAL_CHANGE" };
 
 const initialState: State = {
-  theme: "light",
+  theme: loadStoredTheme(),
   view: "list",
   search: "",
   groupFilter: null,
@@ -257,6 +262,10 @@ export default function App() {
     });
     return () => unlisten?.();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+  }, [state.theme]);
 
   useEffect(() => {
     if (!state.toast) return;
