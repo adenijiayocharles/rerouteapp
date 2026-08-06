@@ -194,6 +194,95 @@ fn extract_marker_exit(stdout: &str, marker: &str) -> Option<i32> {
         .and_then(|code| code.trim().parse::<i32>().ok())
 }
 
+/// Installs the privileged helper daemon (LaunchDaemon + binary in
+/// `/Library/PrivilegedHelperTools`) and performs this write (+ optional
+/// flush) in the *same* elevated shell invocation — one prompt covers
+/// both. Install steps are chained with `&&` ahead of the existing
+/// mv/flush marker sequence, so an install failure is reported as a
+/// failed write (write_ok = false) rather than silently partially
+/// succeeding.
+#[cfg(target_os = "macos")]
+pub fn install_helper_and_write(
+    executor: &dyn ElevatedExecutor,
+    helper_binary_src: &Path,
+    plist_staging: &Path,
+    hosts_staging: &Path,
+    hosts_path: &Path,
+    flush_cmd: Option<&str>,
+) -> Result<WriteOutcome, String> {
+    let dest = format!(
+        "{}/{}",
+        helper_protocol::HELPER_INSTALL_DIR,
+        helper_protocol::HELPER_BINARY_NAME
+    );
+    let install_chain = format!(
+        "mkdir -p {installdir} && cp {src} {dest} && chown root:wheel {dest} && chmod 755 {dest} && cp {plist_src} {plist_dest} && chown root:wheel {plist_dest} && chmod 644 {plist_dest} && (launchctl bootout system/{label} 2>/dev/null; launchctl bootstrap system {plist_dest})",
+        installdir = shell_quote(helper_protocol::HELPER_INSTALL_DIR),
+        src = shell_quote(&helper_binary_src.to_string_lossy()),
+        dest = shell_quote(&dest),
+        plist_src = shell_quote(&plist_staging.to_string_lossy()),
+        plist_dest = shell_quote(helper_protocol::LAUNCH_DAEMON_PLIST_PATH),
+        label = helper_protocol::HELPER_LABEL,
+    );
+
+    let mv_cmd = format!(
+        "mv -f {} {}",
+        shell_quote(&hosts_staging.to_string_lossy()),
+        shell_quote(&hosts_path.to_string_lossy())
+    );
+    let full_cmd = match flush_cmd {
+        Some(flush) => format!(
+            "{install_chain} && {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; {{ {flush} ; }} ; echo {FLUSH_MARKER}:$?"
+        ),
+        None => format!("{install_chain} && {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$?"),
+    };
+
+    let stdout = executor.run_privileged_shell(&full_cmd)?;
+    let mv_exit = extract_marker_exit(&stdout, MV_MARKER);
+    let flush_exit = flush_cmd.map(|_| extract_marker_exit(&stdout, FLUSH_MARKER));
+
+    Ok(WriteOutcome {
+        write_ok: mv_exit == Some(0),
+        flush_ok: flush_exit.map(|e| e == Some(0)),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_helper_and_write(
+    _executor: &dyn ElevatedExecutor,
+    _helper_binary_src: &Path,
+    _plist_staging: &Path,
+    _hosts_staging: &Path,
+    _hosts_path: &Path,
+    _flush_cmd: Option<&str>,
+) -> Result<WriteOutcome, String> {
+    // TODO: verify on this OS. The background-helper install path is
+    // currently macOS-only (LaunchDaemon + getpeereid); other platforms
+    // still use the per-write elevation prompt in write_hosts_file.
+    Err("The background helper is not yet supported on this OS.".to_string())
+}
+
+/// Elevated command to fully remove the helper daemon: stop it via
+/// launchd, then delete its binary and LaunchDaemon plist.
+#[cfg(target_os = "macos")]
+pub fn build_uninstall_command() -> String {
+    format!(
+        "launchctl bootout system/{label} 2>/dev/null; rm -f {plist} {bin}",
+        label = helper_protocol::HELPER_LABEL,
+        plist = shell_quote(helper_protocol::LAUNCH_DAEMON_PLIST_PATH),
+        bin = shell_quote(&format!(
+            "{}/{}",
+            helper_protocol::HELPER_INSTALL_DIR,
+            helper_protocol::HELPER_BINARY_NAME
+        )),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn build_uninstall_command() -> String {
+    String::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

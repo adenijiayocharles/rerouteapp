@@ -1,8 +1,10 @@
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::dns_flush;
 use crate::elevate;
+use crate::helper_client;
+use crate::helper_install;
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry, IpCandidate};
 use crate::state::AppState;
@@ -70,10 +72,14 @@ fn draft_to_entry(id: &str, draft: &EntryDraft) -> Entry {
 }
 
 /// Backs up the current hosts file, regenerates it from `entries`, and
-/// writes it through the elevated executor (optionally flushing DNS in the
-/// same admin prompt). Updates `last_written` on success so the file
-/// watcher doesn't mistake this write for an out-of-band edit.
+/// writes it. Prefers the privileged helper daemon (no prompt) when it's
+/// reachable; otherwise installs it and performs this write in the same
+/// elevated prompt, so only the very first write (or a write after the
+/// daemon has somehow stopped) ever prompts. Updates `last_written` on
+/// success so the file watcher doesn't mistake this write for an
+/// out-of-band edit.
 fn backup_and_write(
+    app: &AppHandle,
     state: &AppState,
     entries: &[Entry],
     do_flush: bool,
@@ -87,17 +93,42 @@ fn backup_and_write(
     let backup_path = state.backups_dir.join(format!("hosts-{timestamp}.bak"));
     std::fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
 
-    let staging_path = state.backups_dir.join(".staging-hosts");
-    hosts_parser::atomic_write(&staging_path, &new_content)
-        .map_err(|e| format!("Failed to stage the hosts file: {e}"))?;
-
     let flush_cmd = if do_flush { dns_flush::flush_command() } else { None };
-    let outcome = elevate::write_hosts_file(
-        state.executor.as_ref(),
-        &staging_path,
-        &state.hosts_path,
-        flush_cmd.as_deref(),
-    )?;
+
+    let outcome = if helper_client::ping() {
+        let write_ok = helper_client::write_hosts(&new_content).is_ok();
+        let flush_ok = if write_ok && do_flush {
+            Some(helper_client::flush_dns().is_ok())
+        } else {
+            None
+        };
+        elevate::WriteOutcome { write_ok, flush_ok }
+    } else {
+        match helper_install::install_and_write(
+            app,
+            state.executor.as_ref(),
+            &state.backups_dir,
+            &new_content,
+            &state.hosts_path,
+            flush_cmd.as_deref(),
+        ) {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                // Couldn't install the daemon (e.g. its binary isn't present
+                // in this build) — fall back to a plain per-write elevation
+                // so the app still works, just with a prompt every time.
+                let staging_path = state.backups_dir.join(".staging-hosts");
+                hosts_parser::atomic_write(&staging_path, &new_content)
+                    .map_err(|e| format!("Failed to stage the hosts file: {e}"))?;
+                elevate::write_hosts_file(
+                    state.executor.as_ref(),
+                    &staging_path,
+                    &state.hosts_path,
+                    flush_cmd.as_deref(),
+                )?
+            }
+        }
+    };
 
     if outcome.write_ok {
         *state.last_written.lock().unwrap() = Some(new_content);
@@ -176,52 +207,46 @@ pub fn preview_save(state: State<AppState>, draft: EntryDraft) -> Result<DiffPre
 }
 
 #[tauri::command]
-pub fn confirm_save(state: State<AppState>, draft: EntryDraft) -> Result<WriteResult, String> {
+pub fn confirm_save(app: AppHandle, state: State<AppState>, draft: EntryDraft) -> Result<WriteResult, String> {
     validate_draft(&draft)?;
     let is_new = draft.id.is_none();
 
-    let (before_snapshot, after_entry) = {
-        let conn = state.conn.lock().unwrap();
-        let before = match &draft.id {
-            Some(id) => store::get_entry(&conn, id).map_err(|e| e.to_string())?,
-            None => None,
-        };
-        let after = if is_new {
-            store::insert_entry(&conn, &draft).map_err(|e| e.to_string())?
-        } else {
-            store::update_entry(&conn, draft.id.as_ref().unwrap(), &draft)
-                .map_err(|e| e.to_string())?
-        };
-        (before, after)
-    };
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let entries = {
-        let conn = state.conn.lock().unwrap();
-        store::list_entries(&conn).map_err(|e| e.to_string())?
+    let before_snapshot = match &draft.id {
+        Some(id) => store::get_entry(&tx, id).map_err(|e| e.to_string())?,
+        None => None,
     };
+    let after_entry = if is_new {
+        store::insert_entry(&tx, &draft).map_err(|e| e.to_string())?
+    } else {
+        store::update_entry(&tx, draft.id.as_ref().unwrap(), &draft).map_err(|e| e.to_string())?
+    };
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
     // Matches the approved design mockup: add/edit saves through the diff
     // modal don't trigger a DNS flush (only an explicit active-IP switch
     // does, per spec Step 3 and the mockup's switchIp handler).
     let do_flush = false;
-    let (outcome, backup_path) = backup_and_write(&*state, &entries, do_flush)?;
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;
     if !outcome.write_ok {
+        // tx drops here without being committed, rolling back the DB
+        // mutation above so it never diverges from what's actually on disk.
         return Err("Failed to write the hosts file.".to_string());
     }
 
-    {
-        let conn = state.conn.lock().unwrap();
-        store::insert_history(
-            &conn,
-            &after_entry.hostname,
-            if is_new { "Added entry" } else { "Edited entry" },
-            Some(&after_entry.id),
-            before_snapshot.as_ref(),
-            Some(&after_entry),
-            Some(&backup_path),
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    store::insert_history(
+        &tx,
+        &after_entry.hostname,
+        if is_new { "Added entry" } else { "Edited entry" },
+        Some(&after_entry.id),
+        before_snapshot.as_ref(),
+        Some(&after_entry),
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {
         entry: Some(after_entry),
@@ -232,16 +257,17 @@ pub fn confirm_save(state: State<AppState>, draft: EntryDraft) -> Result<WriteRe
 
 #[tauri::command]
 pub fn switch_active_ip(
+    app: AppHandle,
     state: State<AppState>,
     entry_id: String,
     ip_id: String,
 ) -> Result<WriteResult, String> {
-    let before = {
-        let conn = state.conn.lock().unwrap();
-        store::get_entry(&conn, &entry_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Entry not found.".to_string())?
-    };
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let before = store::get_entry(&tx, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Entry not found.".to_string())?;
     let target_ip = before
         .ips
         .iter()
@@ -249,35 +275,26 @@ pub fn switch_active_ip(
         .ok_or_else(|| "IP candidate not found.".to_string())?
         .clone();
 
-    let after_entry = {
-        let conn = state.conn.lock().unwrap();
-        store::set_active_ip(&conn, &entry_id, &ip_id).map_err(|e| e.to_string())?
-    };
-
-    let entries = {
-        let conn = state.conn.lock().unwrap();
-        store::list_entries(&conn).map_err(|e| e.to_string())?
-    };
+    let after_entry = store::set_active_ip(&tx, &entry_id, &ip_id).map_err(|e| e.to_string())?;
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
     let do_flush = true; // every active-IP change flushes DNS, per spec
-    let (outcome, backup_path) = backup_and_write(&*state, &entries, do_flush)?;
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
     }
 
-    {
-        let conn = state.conn.lock().unwrap();
-        store::insert_history(
-            &conn,
-            &after_entry.hostname,
-            "Switched active IP",
-            Some(&entry_id),
-            Some(&before),
-            Some(&after_entry),
-            Some(&backup_path),
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    store::insert_history(
+        &tx,
+        &after_entry.hostname,
+        "Switched active IP",
+        Some(&entry_id),
+        Some(&before),
+        Some(&after_entry),
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, &target_ip.ip);
     Ok(WriteResult {
@@ -288,42 +305,32 @@ pub fn switch_active_ip(
 }
 
 #[tauri::command]
-pub fn toggle_enabled(state: State<AppState>, entry_id: String) -> Result<WriteResult, String> {
-    let before = {
-        let conn = state.conn.lock().unwrap();
-        store::get_entry(&conn, &entry_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Entry not found.".to_string())?
-    };
+pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) -> Result<WriteResult, String> {
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let after_entry = {
-        let conn = state.conn.lock().unwrap();
-        store::set_enabled(&conn, &entry_id, !before.enabled).map_err(|e| e.to_string())?
-    };
+    let before = store::get_entry(&tx, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Entry not found.".to_string())?;
+    let after_entry = store::set_enabled(&tx, &entry_id, !before.enabled).map_err(|e| e.to_string())?;
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
-    let entries = {
-        let conn = state.conn.lock().unwrap();
-        store::list_entries(&conn).map_err(|e| e.to_string())?
-    };
-
-    let (outcome, backup_path) = backup_and_write(&*state, &entries, false)?;
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, false)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
     }
 
-    {
-        let conn = state.conn.lock().unwrap();
-        store::insert_history(
-            &conn,
-            &after_entry.hostname,
-            if after_entry.enabled { "Enabled entry" } else { "Disabled entry" },
-            Some(&entry_id),
-            Some(&before),
-            Some(&after_entry),
-            Some(&backup_path),
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    store::insert_history(
+        &tx,
+        &after_entry.hostname,
+        if after_entry.enabled { "Enabled entry" } else { "Disabled entry" },
+        Some(&entry_id),
+        Some(&before),
+        Some(&after_entry),
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {
         entry: Some(after_entry),
@@ -391,13 +398,13 @@ pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<Dif
 }
 
 #[tauri::command]
-pub fn confirm_restore(state: State<AppState>, history_id: String) -> Result<WriteResult, String> {
-    let h = {
-        let conn = state.conn.lock().unwrap();
-        store::get_history_entry(&conn, &history_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "History entry not found.".to_string())?
-    };
+pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: String) -> Result<WriteResult, String> {
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let h = store::get_history_entry(&tx, &history_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "History entry not found.".to_string())?;
 
     let target_id = h
         .after
@@ -408,42 +415,33 @@ pub fn confirm_restore(state: State<AppState>, history_id: String) -> Result<Wri
 
     let is_removal = h.before.is_none();
 
-    let (before_restore, after_entry) = {
-        let conn = state.conn.lock().unwrap();
-        let before_restore = store::get_entry(&conn, &target_id).map_err(|e| e.to_string())?;
-        let after_entry = if is_removal {
-            store::delete_entry(&conn, &target_id).map_err(|e| e.to_string())?;
-            None
-        } else {
-            let snapshot = h.before.as_ref().unwrap();
-            Some(store::restore_entry_snapshot(&conn, snapshot).map_err(|e| e.to_string())?)
-        };
-        (before_restore, after_entry)
+    let before_restore = store::get_entry(&tx, &target_id).map_err(|e| e.to_string())?;
+    let after_entry = if is_removal {
+        store::delete_entry(&tx, &target_id).map_err(|e| e.to_string())?;
+        None
+    } else {
+        let snapshot = h.before.as_ref().unwrap();
+        Some(store::restore_entry_snapshot(&tx, snapshot).map_err(|e| e.to_string())?)
     };
 
-    let entries = {
-        let conn = state.conn.lock().unwrap();
-        store::list_entries(&conn).map_err(|e| e.to_string())?
-    };
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
-    let (outcome, backup_path) = backup_and_write(&*state, &entries, false)?;
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, false)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
     }
 
-    {
-        let conn = state.conn.lock().unwrap();
-        store::insert_history(
-            &conn,
-            &h.hostname,
-            "Restored previous version",
-            Some(&target_id),
-            before_restore.as_ref(),
-            after_entry.as_ref(),
-            Some(&backup_path),
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    store::insert_history(
+        &tx,
+        &h.hostname,
+        "Restored previous version",
+        Some(&target_id),
+        before_restore.as_ref(),
+        after_entry.as_ref(),
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {
         entry: after_entry,
@@ -452,9 +450,27 @@ pub fn confirm_restore(state: State<AppState>, history_id: String) -> Result<Wri
     })
 }
 
-/// Standalone "Flush DNS now" action, independent of any edit.
+/// Standalone "Flush DNS now" action, independent of any edit. Prefers
+/// the helper daemon (no prompt); falls back to a one-off elevated call
+/// if the daemon isn't installed/running (this action alone never
+/// triggers a daemon install — that only happens on an actual write).
 #[tauri::command]
 pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
+    if helper_client::ping() {
+        return match helper_client::flush_dns() {
+            Ok(()) => Ok(WriteResult {
+                entry: None,
+                flush_ok: Some(true),
+                flush_message: None,
+            }),
+            Err(e) => Ok(WriteResult {
+                entry: None,
+                flush_ok: Some(false),
+                flush_message: Some(format!("DNS flush failed: {e}")),
+            }),
+        };
+    }
+
     let Some(cmd) = dns_flush::flush_command() else {
         return Ok(WriteResult {
             entry: None,
@@ -474,4 +490,20 @@ pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
             Some("DNS flush failed. You can retry from here.".to_string())
         },
     })
+}
+
+/// Whether the privileged helper daemon is currently installed and
+/// reachable (drives the sidebar's helper-status indicator).
+#[tauri::command]
+pub fn helper_status() -> bool {
+    helper_client::ping()
+}
+
+/// Removes the helper daemon (one elevated prompt): stops it via launchd
+/// and deletes its binary and LaunchDaemon plist. Subsequent writes fall
+/// back to per-write elevation until it's reinstalled.
+#[tauri::command]
+pub fn uninstall_helper(state: State<AppState>) -> Result<(), String> {
+    let cmd = elevate::build_uninstall_command();
+    state.executor.run_privileged_shell(&cmd).map(|_| ())
 }

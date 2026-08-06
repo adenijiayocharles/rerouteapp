@@ -27,6 +27,7 @@ regex = "1"
 notify = "6"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+helper-protocol = { path = "../helper-protocol" }
 
 [dev-dependencies]
 tempfile = "3"

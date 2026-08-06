@@ -25,3 +25,6 @@ dist-ssr
 
 .claude/
 claude-code-prompt-hosts-manager.md
+
+# Cargo workspace build output (shared by src-tauri, helper, helper-protocol)
+/target

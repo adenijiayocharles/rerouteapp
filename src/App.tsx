@@ -31,11 +31,13 @@ interface State {
   toast: ToastState | null;
   trayOpen: boolean;
   externalChangeDetected: boolean;
+  helperActive: boolean;
 }
 
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
   | { type: "SET_HISTORY"; history: HistoryEntry[] }
+  | { type: "SET_HELPER_ACTIVE"; active: boolean }
   | { type: "TOGGLE_THEME" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
@@ -81,6 +83,7 @@ const initialState: State = {
   toast: null,
   trayOpen: false,
   externalChangeDetected: false,
+  helperActive: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -89,6 +92,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, entries: action.entries };
     case "SET_HISTORY":
       return { ...state, history: action.history };
+    case "SET_HELPER_ACTIVE":
+      return { ...state, helperActive: action.active };
     case "TOGGLE_THEME":
       return { ...state, theme: state.theme === "light" ? "dark" : "light" };
     case "GO_LIST":
@@ -219,12 +224,31 @@ export default function App() {
     dispatch({ type: "SET_HISTORY", history });
   }
 
+  async function refreshHelperStatus() {
+    const active = await api.helperStatus();
+    dispatch({ type: "SET_HELPER_ACTIVE", active });
+  }
+
   useEffect(() => {
     refreshEntries().catch((err) =>
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to load entries", message: errorMessage(err) } }),
     );
     refreshHistory().catch(() => {});
+    refreshHelperStatus().catch(() => {});
   }, []);
+
+  async function handleRemoveHelper() {
+    try {
+      await api.uninstallHelper();
+      await refreshHelperStatus();
+      dispatch({
+        type: "SET_TOAST",
+        toast: { type: "success", title: "Background helper removed", message: "The next write will prompt for your password again." },
+      });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't remove the helper", message: errorMessage(err) } });
+    }
+  }
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -303,6 +327,7 @@ export default function App() {
         if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
         dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
         await refreshHistory();
+        refreshHelperStatus().catch(() => {});
         dispatch({
           type: "SET_TOAST",
           toast: {
@@ -320,6 +345,7 @@ export default function App() {
         }
         dispatch({ type: "CLOSE_DIFF" });
         await refreshHistory();
+        refreshHelperStatus().catch(() => {});
         dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Restored", message: "Previous version has been written to the hosts file." } });
       } else {
         dispatch({ type: "CLOSE_DIFF" });
@@ -337,6 +363,7 @@ export default function App() {
       if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
       dispatch({ type: "SET_FLUSHING", id: null });
       await refreshHistory();
+      refreshHelperStatus().catch(() => {});
       const ip = result.entry?.ips.find((i) => i.id === ipId);
       if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
         dispatch({
@@ -360,6 +387,7 @@ export default function App() {
       const result = await api.toggleEnabled(entryId);
       if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
       await refreshHistory();
+      refreshHelperStatus().catch(() => {});
       if (result.entry) {
         dispatch({
           type: "SET_TOAST",
@@ -435,6 +463,8 @@ export default function App() {
           groups={groups}
           groupFilter={state.groupFilter}
           onSelectGroup={(g) => dispatch({ type: "SELECT_GROUP", group: g })}
+          helperActive={state.helperActive}
+          onRemoveHelper={handleRemoveHelper}
         />
 
         {state.view === "list" ? (

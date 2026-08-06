@@ -18,4 +18,7 @@ export const api = {
   confirmRestore: (historyId: string) => invoke<WriteResult>("confirm_restore", { historyId }),
 
   flushDns: () => invoke<WriteResult>("flush_dns"),
+
+  helperStatus: () => invoke<boolean>("helper_status"),
+  uninstallHelper: () => invoke<void>("uninstall_helper"),
 };

@@ -1,6 +1,8 @@
 mod commands;
 mod dns_flush;
 mod elevate;
+mod helper_client;
+mod helper_install;
 mod hosts_parser;
 mod models;
 mod state;
@@ -61,6 +63,8 @@ pub fn run() {
             commands::preview_restore,
             commands::confirm_restore,
             commands::flush_dns,
+            commands::helper_status,
+            commands::uninstall_helper,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
