@@ -1,0 +1,498 @@
+import { useEffect, useMemo, useReducer } from "react";
+import { listen } from "@tauri-apps/api/event";
+import "./App.css";
+import { api } from "./api";
+import { colorsFor, type Theme } from "./theme";
+import type { DiffPreview, Entry, EntryDraft, HistoryEntry, ToastState } from "./types";
+import { TitleBar } from "./components/TitleBar";
+import { Sidebar } from "./components/Sidebar";
+import { ListView } from "./components/ListView";
+import { HistoryView } from "./components/HistoryView";
+import { DraftPanel } from "./components/DraftPanel";
+import { DiffModal } from "./components/DiffModal";
+import { Toast } from "./components/Toast";
+import { ReloadBanner } from "./components/ReloadBanner";
+
+const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
+
+interface State {
+  theme: Theme;
+  view: "list" | "history";
+  search: string;
+  groupFilter: string | null;
+  entries: Entry[];
+  history: HistoryEntry[];
+  openIpMenuId: string | null;
+  flushingId: string | null;
+  editingDraft: EntryDraft | null;
+  diff: DiffPreview | null;
+  pendingDraft: EntryDraft | null;
+  pendingRestoreId: string | null;
+  toast: ToastState | null;
+  trayOpen: boolean;
+  externalChangeDetected: boolean;
+}
+
+type Action =
+  | { type: "SET_ENTRIES"; entries: Entry[] }
+  | { type: "SET_HISTORY"; history: HistoryEntry[] }
+  | { type: "TOGGLE_THEME" }
+  | { type: "GO_LIST" }
+  | { type: "GO_HISTORY" }
+  | { type: "SELECT_GROUP"; group: string }
+  | { type: "CLEAR_GROUP_FILTER" }
+  | { type: "SET_SEARCH"; value: string }
+  | { type: "TOGGLE_IP_MENU"; id: string }
+  | { type: "CLOSE_IP_MENU" }
+  | { type: "TOGGLE_TRAY" }
+  | { type: "CLOSE_TRAY" }
+  | { type: "SET_FLUSHING"; id: string | null }
+  | { type: "UPSERT_ENTRY"; entry: Entry }
+  | { type: "REMOVE_ENTRY"; id: string }
+  | { type: "OPEN_ADD_PANEL" }
+  | { type: "OPEN_EDIT_PANEL"; entry: Entry }
+  | { type: "CLOSE_DRAFT" }
+  | { type: "UPDATE_DRAFT_FIELD"; field: "hostname" | "comment" | "group"; value: string }
+  | { type: "UPDATE_DRAFT_IP"; uid: string; field: "label" | "ip"; value: string }
+  | { type: "ADD_DRAFT_IP_ROW" }
+  | { type: "REMOVE_DRAFT_IP_ROW"; uid: string }
+  | { type: "SET_DRAFT_ACTIVE"; uid: string }
+  | { type: "TOGGLE_DRAFT_ENABLED" }
+  | { type: "SHOW_DIFF"; diff: DiffPreview; pendingDraft: EntryDraft | null; pendingRestoreId: string | null }
+  | { type: "CLOSE_DIFF" }
+  | { type: "CLOSE_DIFF_AND_DRAFT" }
+  | { type: "SET_TOAST"; toast: ToastState | null }
+  | { type: "EXTERNAL_CHANGE_DETECTED" }
+  | { type: "DISMISS_EXTERNAL_CHANGE" };
+
+const initialState: State = {
+  theme: "light",
+  view: "list",
+  search: "",
+  groupFilter: null,
+  entries: [],
+  history: [],
+  openIpMenuId: null,
+  flushingId: null,
+  editingDraft: null,
+  diff: null,
+  pendingDraft: null,
+  pendingRestoreId: null,
+  toast: null,
+  trayOpen: false,
+  externalChangeDetected: false,
+};
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "SET_ENTRIES":
+      return { ...state, entries: action.entries };
+    case "SET_HISTORY":
+      return { ...state, history: action.history };
+    case "TOGGLE_THEME":
+      return { ...state, theme: state.theme === "light" ? "dark" : "light" };
+    case "GO_LIST":
+      return { ...state, view: "list", trayOpen: false, groupFilter: null };
+    case "GO_HISTORY":
+      return { ...state, view: "history", trayOpen: false };
+    case "SELECT_GROUP":
+      return { ...state, view: "list", trayOpen: false, groupFilter: action.group };
+    case "CLEAR_GROUP_FILTER":
+      return { ...state, groupFilter: null };
+    case "SET_SEARCH":
+      return { ...state, search: action.value };
+    case "TOGGLE_IP_MENU":
+      return { ...state, openIpMenuId: state.openIpMenuId === action.id ? null : action.id };
+    case "CLOSE_IP_MENU":
+      return { ...state, openIpMenuId: null };
+    case "TOGGLE_TRAY":
+      return { ...state, trayOpen: !state.trayOpen };
+    case "CLOSE_TRAY":
+      return { ...state, trayOpen: false };
+    case "SET_FLUSHING":
+      return { ...state, flushingId: action.id };
+    case "UPSERT_ENTRY": {
+      const exists = state.entries.some((e) => e.id === action.entry.id);
+      return {
+        ...state,
+        entries: exists
+          ? state.entries.map((e) => (e.id === action.entry.id ? action.entry : e))
+          : [...state.entries, action.entry],
+      };
+    }
+    case "REMOVE_ENTRY":
+      return { ...state, entries: state.entries.filter((e) => e.id !== action.id) };
+    case "OPEN_ADD_PANEL": {
+      const uid = crypto.randomUUID();
+      return {
+        ...state,
+        editingDraft: {
+          id: null,
+          hostname: "",
+          comment: "",
+          group: state.groupFilter ?? "",
+          enabled: true,
+          activeUid: uid,
+          ips: [{ uid, label: "Local", ip: "127.0.0.1" }],
+        },
+      };
+    }
+    case "OPEN_EDIT_PANEL":
+      return {
+        ...state,
+        editingDraft: {
+          id: action.entry.id,
+          hostname: action.entry.hostname,
+          comment: action.entry.comment,
+          group: action.entry.group,
+          enabled: action.entry.enabled,
+          activeUid: action.entry.activeIpId,
+          ips: action.entry.ips.map((i) => ({ uid: i.id, label: i.label, ip: i.ip })),
+        },
+      };
+    case "CLOSE_DRAFT":
+      return { ...state, editingDraft: null };
+    case "UPDATE_DRAFT_FIELD":
+      if (!state.editingDraft) return state;
+      return { ...state, editingDraft: { ...state.editingDraft, [action.field]: action.value } };
+    case "UPDATE_DRAFT_IP":
+      if (!state.editingDraft) return state;
+      return {
+        ...state,
+        editingDraft: {
+          ...state.editingDraft,
+          ips: state.editingDraft.ips.map((r) => (r.uid === action.uid ? { ...r, [action.field]: action.value } : r)),
+        },
+      };
+    case "ADD_DRAFT_IP_ROW": {
+      if (!state.editingDraft) return state;
+      const uid = crypto.randomUUID();
+      return {
+        ...state,
+        editingDraft: { ...state.editingDraft, ips: [...state.editingDraft.ips, { uid, label: "", ip: "" }] },
+      };
+    }
+    case "REMOVE_DRAFT_IP_ROW": {
+      if (!state.editingDraft) return state;
+      const ips = state.editingDraft.ips.filter((r) => r.uid !== action.uid);
+      const activeUid = state.editingDraft.activeUid === action.uid ? ips[0]?.uid ?? "" : state.editingDraft.activeUid;
+      return { ...state, editingDraft: { ...state.editingDraft, ips, activeUid } };
+    }
+    case "SET_DRAFT_ACTIVE":
+      if (!state.editingDraft) return state;
+      return { ...state, editingDraft: { ...state.editingDraft, activeUid: action.uid } };
+    case "TOGGLE_DRAFT_ENABLED":
+      if (!state.editingDraft) return state;
+      return { ...state, editingDraft: { ...state.editingDraft, enabled: !state.editingDraft.enabled } };
+    case "SHOW_DIFF":
+      return { ...state, diff: action.diff, pendingDraft: action.pendingDraft, pendingRestoreId: action.pendingRestoreId };
+    case "CLOSE_DIFF":
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null };
+    case "CLOSE_DIFF_AND_DRAFT":
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, editingDraft: null };
+    case "SET_TOAST":
+      return { ...state, toast: action.toast };
+    case "EXTERNAL_CHANGE_DETECTED":
+      return { ...state, externalChangeDetected: true };
+    case "DISMISS_EXTERNAL_CHANGE":
+      return { ...state, externalChangeDetected: false };
+    default:
+      return state;
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return typeof err === "string" ? err : err instanceof Error ? err.message : "Something went wrong.";
+}
+
+export default function App() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const c = colorsFor(state.theme);
+
+  async function refreshEntries() {
+    const entries = await api.listEntries();
+    dispatch({ type: "SET_ENTRIES", entries });
+  }
+
+  async function refreshHistory() {
+    const history = await api.getHistory();
+    dispatch({ type: "SET_HISTORY", history });
+  }
+
+  useEffect(() => {
+    refreshEntries().catch((err) =>
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to load entries", message: errorMessage(err) } }),
+    );
+    refreshHistory().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen(HOSTS_CHANGED_EVENT, () => dispatch({ type: "EXTERNAL_CHANGE_DETECTED" })).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (!state.toast) return;
+    if (state.toast.type === "info") return;
+    const timer = setTimeout(() => dispatch({ type: "SET_TOAST", toast: null }), 4200);
+    return () => clearTimeout(timer);
+  }, [state.toast]);
+
+  const filteredEntries = useMemo(() => {
+    const search = state.search.trim().toLowerCase();
+    return state.entries.filter((e) => {
+      if (state.groupFilter && e.group !== state.groupFilter) return false;
+      if (!search) return true;
+      return e.hostname.toLowerCase().includes(search) || (e.comment || "").toLowerCase().includes(search);
+    });
+  }, [state.entries, state.search, state.groupFilter]);
+
+  const groups = useMemo(() => {
+    const names = Array.from(new Set(state.entries.filter((e) => e.group).map((e) => e.group))).sort();
+    return names.map((name) => ({ name, count: state.entries.filter((e) => e.group === name).length }));
+  }, [state.entries]);
+
+  async function handleReload() {
+    dispatch({ type: "DISMISS_EXTERNAL_CHANGE" });
+    try {
+      await refreshEntries();
+      await refreshHistory();
+      dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Reloaded", message: "Loaded the latest hosts file." } });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Reload failed", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleRequestSave() {
+    if (!state.editingDraft) return;
+    try {
+      const diff = await api.previewSave(state.editingDraft);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: state.editingDraft, pendingRestoreId: null });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleViewHistoryDiff(id: string) {
+    try {
+      const diff = await api.historyDiff(id);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't load diff", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleRequestRestore(id: string) {
+    try {
+      const diff = await api.previewRestore(id);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview restore", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleConfirmDiff() {
+    const { diff, pendingDraft, pendingRestoreId } = state;
+    if (!diff) return;
+    try {
+      if (diff.mode === "save" && pendingDraft) {
+        const result = await api.confirmSave(pendingDraft);
+        if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+        dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
+        await refreshHistory();
+        dispatch({
+          type: "SET_TOAST",
+          toast: {
+            type: "success",
+            title: diff.isNew ? "Entry added" : "Entry saved",
+            message: `${result.entry?.hostname ?? ""} has been written to the hosts file.`,
+          },
+        });
+      } else if (diff.mode === "restore" && pendingRestoreId) {
+        const result = await api.confirmRestore(pendingRestoreId);
+        if (diff.isRemoval) {
+          if (diff.restoreTargetId) dispatch({ type: "REMOVE_ENTRY", id: diff.restoreTargetId });
+        } else if (result.entry) {
+          dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+        }
+        dispatch({ type: "CLOSE_DIFF" });
+        await refreshHistory();
+        dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Restored", message: "Previous version has been written to the hosts file." } });
+      } else {
+        dispatch({ type: "CLOSE_DIFF" });
+      }
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Write failed", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSwitchIp(entryId: string, ipId: string) {
+    dispatch({ type: "CLOSE_IP_MENU" });
+    dispatch({ type: "SET_FLUSHING", id: entryId });
+    try {
+      const result = await api.switchActiveIp(entryId, ipId);
+      if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+      dispatch({ type: "SET_FLUSHING", id: null });
+      await refreshHistory();
+      const ip = result.entry?.ips.find((i) => i.id === ipId);
+      if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "error", title: "DNS flush failed", message: result.flushMessage ?? "The DNS cache could not be flushed.", retryFlush: true },
+        });
+      } else {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "success", title: "IP switched", message: `${result.entry?.hostname} → ${ip?.ip} · DNS cache flushed` },
+        });
+      }
+    } catch (err) {
+      dispatch({ type: "SET_FLUSHING", id: null });
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to switch IP", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleToggleEnabled(entryId: string) {
+    try {
+      const result = await api.toggleEnabled(entryId);
+      if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+      await refreshHistory();
+      if (result.entry) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: {
+            type: "success",
+            title: result.entry.enabled ? "Entry enabled" : "Entry disabled",
+            message: `${result.entry.hostname} ${result.entry.enabled ? "is now active in the hosts file." : "has been commented out."}`,
+          },
+        });
+      }
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to update entry", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleFlushDns() {
+    dispatch({ type: "SET_TOAST", toast: { type: "info", title: "Flushing DNS…", message: "Flushing the local DNS resolver cache." } });
+    try {
+      const result = await api.flushDns();
+      dispatch({
+        type: "SET_TOAST",
+        toast: {
+          type: result.flushOk ? "success" : "error",
+          title: result.flushOk ? "DNS flush succeeded" : "DNS flush failed",
+          message: result.flushMessage ?? "DNS cache flushed successfully.",
+          retryFlush: !result.flushOk,
+        },
+      });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "DNS flush failed", message: errorMessage(err), retryFlush: true } });
+    }
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: c.bg,
+        color: c.text,
+        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        transition: "background .25s ease",
+        position: "relative",
+        overflow: "hidden",
+        // @ts-expect-error custom property for scrollbar thumb color
+        "--hm-scroll-thumb": c.scrollThumb,
+      }}
+    >
+      <TitleBar
+        c={c}
+        theme={state.theme}
+        onToggleTheme={() => dispatch({ type: "TOGGLE_THEME" })}
+        trayOpen={state.trayOpen}
+        onToggleTray={() => dispatch({ type: "TOGGLE_TRAY" })}
+        onCloseTray={() => dispatch({ type: "CLOSE_TRAY" })}
+        entries={state.entries}
+        onSwitchIp={handleSwitchIp}
+        onFlushDns={handleFlushDns}
+      />
+
+      {state.externalChangeDetected && (
+        <ReloadBanner c={c} onReload={handleReload} onDismiss={() => dispatch({ type: "DISMISS_EXTERNAL_CHANGE" })} />
+      )}
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
+        <Sidebar
+          c={c}
+          view={state.view}
+          onGoList={() => dispatch({ type: "GO_LIST" })}
+          onGoHistory={() => dispatch({ type: "GO_HISTORY" })}
+          entryCount={state.entries.length}
+          groups={groups}
+          groupFilter={state.groupFilter}
+          onSelectGroup={(g) => dispatch({ type: "SELECT_GROUP", group: g })}
+        />
+
+        {state.view === "list" ? (
+          <ListView
+            c={c}
+            entries={filteredEntries}
+            totalEntryCount={state.entries.length}
+            search={state.search}
+            onSearchChange={(v) => dispatch({ type: "SET_SEARCH", value: v })}
+            onAddClick={() => dispatch({ type: "OPEN_ADD_PANEL" })}
+            groupFilter={state.groupFilter}
+            onClearGroupFilter={() => dispatch({ type: "CLEAR_GROUP_FILTER" })}
+            openIpMenuId={state.openIpMenuId}
+            flushingId={state.flushingId}
+            disabled={state.externalChangeDetected}
+            onToggleDropdown={(id) => dispatch({ type: "TOGGLE_IP_MENU", id })}
+            onToggleEnabled={handleToggleEnabled}
+            onEdit={(entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry })}
+            onSwitchIp={handleSwitchIp}
+          />
+        ) : (
+          <HistoryView c={c} history={state.history} onViewDiff={handleViewHistoryDiff} onRestore={handleRequestRestore} />
+        )}
+      </div>
+
+      {state.editingDraft && (
+        <DraftPanel
+          c={c}
+          draft={state.editingDraft}
+          onClose={() => dispatch({ type: "CLOSE_DRAFT" })}
+          onFieldChange={(field, value) => dispatch({ type: "UPDATE_DRAFT_FIELD", field, value })}
+          onIpFieldChange={(uid, field, value) => dispatch({ type: "UPDATE_DRAFT_IP", uid, field, value })}
+          onAddIpRow={() => dispatch({ type: "ADD_DRAFT_IP_ROW" })}
+          onRemoveIpRow={(uid) => dispatch({ type: "REMOVE_DRAFT_IP_ROW", uid })}
+          onSetActive={(uid) => dispatch({ type: "SET_DRAFT_ACTIVE", uid })}
+          onToggleEnabled={() => dispatch({ type: "TOGGLE_DRAFT_ENABLED" })}
+          onSave={handleRequestSave}
+        />
+      )}
+
+      {state.diff && (
+        <DiffModal
+          key={state.diff.title + state.diff.subtitle}
+          c={c}
+          diff={state.diff}
+          onCancel={() => dispatch({ type: "CLOSE_DIFF" })}
+          onConfirm={handleConfirmDiff}
+        />
+      )}
+
+      {state.toast && (
+        <Toast
+          c={c}
+          toast={state.toast}
+          onDismiss={() => dispatch({ type: "SET_TOAST", toast: null })}
+          onRetryFlush={handleFlushDns}
+        />
+      )}
+    </div>
+  );
+}
