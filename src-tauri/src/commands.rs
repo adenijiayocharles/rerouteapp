@@ -75,8 +75,8 @@ fn draft_to_entry(id: &str, draft: &EntryDraft) -> Entry {
 /// writes it. Prefers the privileged helper daemon (no prompt) when it's
 /// reachable; otherwise installs it and performs this write in the same
 /// elevated prompt, so only the very first write (or a write after the
-/// daemon has somehow stopped) ever prompts. Updates `last_written` on
-/// success so the file watcher doesn't mistake this write for an
+/// daemon has somehow stopped) ever prompts. Primes `last_written` before
+/// issuing the write so the file watcher doesn't mistake this write for an
 /// out-of-band edit.
 fn backup_and_write(
     app: &AppHandle,
@@ -92,6 +92,12 @@ fn backup_and_write(
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
     let backup_path = state.backups_dir.join(format!("hosts-{timestamp}.bak"));
     std::fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
+
+    // Prime the watcher's "last written" guard with what we're about to
+    // write *before* issuing the write, so the filesystem event the write
+    // itself triggers can't race ahead of this update and get misreported
+    // as an out-of-band edit.
+    *state.last_written.lock().unwrap() = Some(new_content.clone());
 
     let flush_cmd = if do_flush { dns_flush::flush_command() } else { None };
 
@@ -130,8 +136,11 @@ fn backup_and_write(
         }
     };
 
-    if outcome.write_ok {
-        *state.last_written.lock().unwrap() = Some(new_content);
+    if !outcome.write_ok {
+        // The write never landed, so undo the priming above — otherwise it
+        // would linger and could mask a later out-of-band edit that
+        // happens to match this content.
+        *state.last_written.lock().unwrap() = None;
     }
 
     Ok((outcome, backup_path.to_string_lossy().to_string()))
