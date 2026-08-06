@@ -28,7 +28,8 @@ export function DraftPanel({
   onToggleEnabled,
   onSave,
 }: DraftPanelProps) {
-  const title = draft.id === null ? "Add entry" : "Edit entry";
+  const isNew = draft.id === null;
+  const title = isNew ? "Add entry" : "Edit entry";
 
   return (
     <>
@@ -194,15 +195,17 @@ export function DraftPanel({
           </div>
 
           <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle(c)}>Comment</label>
-              <input
-                value={draft.comment}
-                onChange={(e) => onFieldChange("comment", e.target.value)}
-                placeholder="Optional note"
-                style={{ ...inputStyle(c, false), marginTop: 6 }}
-              />
-            </div>
+            {!isNew && (
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle(c)}>Comment</label>
+                <input
+                  value={draft.comment}
+                  onChange={(e) => onFieldChange("comment", e.target.value)}
+                  placeholder="Optional note"
+                  style={{ ...inputStyle(c, false), marginTop: 6 }}
+                />
+              </div>
+            )}
             <div style={{ flex: 1 }}>
               <label style={labelStyle(c)}>Group</label>
               <input
@@ -275,7 +278,7 @@ export function DraftPanel({
               cursor: "pointer",
             }}
           >
-            Review changes
+            {isNew ? "Save" : "Review changes"}
           </button>
         </div>
       </div>

@@ -138,7 +138,7 @@ function reducer(state: State, action: Action): State {
           group: state.groupFilter ?? "",
           enabled: true,
           activeUid: uid,
-          ips: [{ uid, label: "Local", ip: "127.0.0.1" }],
+          ips: [{ uid, label: "", ip: "" }],
         },
       };
     }
@@ -290,11 +290,47 @@ export default function App() {
     }
   }
 
+  async function performConfirmSave(draft: EntryDraft, isNew: boolean) {
+    const result = await api.confirmSave(draft);
+    if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+    await refreshHistory();
+    refreshHelperStatus().catch(() => {});
+    dispatch({
+      type: "SET_TOAST",
+      toast: {
+        type: "success",
+        title: isNew ? "Entry added" : "Entry saved",
+        message: `${result.entry?.hostname ?? ""} has been written to the hosts file.`,
+      },
+    });
+  }
+
   async function handleRequestSave() {
-    if (!state.editingDraft) return;
+    const draft = state.editingDraft;
+    if (!draft) return;
+
+    // New entries save immediately with no review step, unless the
+    // hostname is a well-known system domain — then fall through to the
+    // usual preview/diff confirmation so that warning still gets shown.
+    if (draft.id === null) {
+      try {
+        const isShadow = await api.isShadowDomain(draft.hostname);
+        if (isShadow) {
+          const diff = await api.previewSave(draft);
+          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null });
+          return;
+        }
+        await performConfirmSave(draft, true);
+        dispatch({ type: "CLOSE_DRAFT" });
+      } catch (err) {
+        dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to save entry", message: errorMessage(err) } });
+      }
+      return;
+    }
+
     try {
-      const diff = await api.previewSave(state.editingDraft);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: state.editingDraft, pendingRestoreId: null });
+      const diff = await api.previewSave(draft);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
     }
@@ -323,19 +359,8 @@ export default function App() {
     if (!diff) return;
     try {
       if (diff.mode === "save" && pendingDraft) {
-        const result = await api.confirmSave(pendingDraft);
-        if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+        await performConfirmSave(pendingDraft, diff.isNew);
         dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
-        await refreshHistory();
-        refreshHelperStatus().catch(() => {});
-        dispatch({
-          type: "SET_TOAST",
-          toast: {
-            type: "success",
-            title: diff.isNew ? "Entry added" : "Entry saved",
-            message: `${result.entry?.hostname ?? ""} has been written to the hosts file.`,
-          },
-        });
       } else if (diff.mode === "restore" && pendingRestoreId) {
         const result = await api.confirmRestore(pendingRestoreId);
         if (diff.isRemoval) {
