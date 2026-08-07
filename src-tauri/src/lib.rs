@@ -77,6 +77,8 @@ pub fn run() {
             commands::uninstall_helper,
             commands::get_helper_enabled,
             commands::set_helper_enabled,
+            commands::get_setting,
+            commands::set_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

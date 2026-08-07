@@ -7,9 +7,11 @@ interface SettingsModalProps {
   helperEnabled: boolean;
   helperActive: boolean;
   launchAtLogin: boolean;
+  autoFlushDns: boolean;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
+  onSetAutoFlushDns: (enabled: boolean) => void;
 }
 
 export function SettingsModal({
@@ -17,9 +19,11 @@ export function SettingsModal({
   helperEnabled,
   helperActive,
   launchAtLogin,
+  autoFlushDns,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
+  onSetAutoFlushDns,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -76,6 +80,17 @@ export function SettingsModal({
             checked={launchAtLogin}
             onToggle={() => onSetLaunchAtLogin(!launchAtLogin)}
           />
+
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel c={c}>Behavior</SectionLabel>
+            <ToggleRow
+              c={c}
+              title="Auto-flush DNS on IP switch"
+              description="Flush the local DNS resolver cache whenever an entry's active IP changes."
+              checked={autoFlushDns}
+              onToggle={() => onSetAutoFlushDns(!autoFlushDns)}
+            />
+          </div>
 
           <div style={{ marginTop: 20 }}>
             <SectionLabel c={c}>Background helper</SectionLabel>

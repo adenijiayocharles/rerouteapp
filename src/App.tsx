@@ -41,6 +41,7 @@ interface State {
   helperEnabled: boolean;
   settingsOpen: boolean;
   launchAtLogin: boolean;
+  autoFlushDns: boolean;
 }
 
 type Action =
@@ -49,6 +50,7 @@ type Action =
   | { type: "SET_HELPER_ACTIVE"; active: boolean }
   | { type: "SET_HELPER_ENABLED"; enabled: boolean }
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
+  | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
   | { type: "TOGGLE_THEME" }
@@ -100,6 +102,7 @@ const initialState: State = {
   helperEnabled: true,
   settingsOpen: false,
   launchAtLogin: false,
+  autoFlushDns: true,
 };
 
 function reducer(state: State, action: Action): State {
@@ -114,6 +117,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, helperEnabled: action.enabled };
     case "SET_LAUNCH_AT_LOGIN":
       return { ...state, launchAtLogin: action.enabled };
+    case "SET_AUTO_FLUSH_DNS":
+      return { ...state, autoFlushDns: action.enabled };
     case "OPEN_SETTINGS":
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
@@ -261,6 +266,7 @@ export default function App() {
     refreshHelperStatus().catch(() => {});
     api.getHelperEnabled().then((enabled) => dispatch({ type: "SET_HELPER_ENABLED", enabled })).catch(() => {});
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
+    api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
   }, []);
 
   async function handleSetHelperEnabled(enabled: boolean) {
@@ -288,6 +294,15 @@ export default function App() {
       dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update launch at login", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetAutoFlushDns(enabled: boolean) {
+    try {
+      await api.setAutoFlushDns(enabled);
+      dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update DNS auto-flush", message: errorMessage(err) } });
     }
   }
 
@@ -590,9 +605,11 @@ export default function App() {
           helperEnabled={state.helperEnabled}
           helperActive={state.helperActive}
           launchAtLogin={state.launchAtLogin}
+          autoFlushDns={state.autoFlushDns}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
           onSetHelperEnabled={handleSetHelperEnabled}
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
+          onSetAutoFlushDns={handleSetAutoFlushDns}
         />
       )}
 

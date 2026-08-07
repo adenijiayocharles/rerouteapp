@@ -27,4 +27,11 @@ export const api = {
 
   getLaunchAtLogin: () => isAutostartEnabled(),
   setLaunchAtLogin: (enabled: boolean) => (enabled ? enableAutostart() : disableAutostart()),
+
+  getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
+  setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
+
+  getAutoFlushDns: () => invoke<string | null>("get_setting", { key: "auto_flush_dns" }).then((v) => v !== "false"),
+  setAutoFlushDns: (enabled: boolean) =>
+    invoke<void>("set_setting", { key: "auto_flush_dns", value: enabled ? "true" : "false" }),
 };

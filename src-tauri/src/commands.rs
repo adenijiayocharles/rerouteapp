@@ -267,6 +267,15 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, draft: EntryDraft) -
     })
 }
 
+/// Reads the Settings page "Auto-flush DNS" toggle (on by default).
+fn auto_flush_dns_enabled(conn: &rusqlite::Connection) -> bool {
+    store::get_setting(conn, "auto_flush_dns")
+        .ok()
+        .flatten()
+        .map(|v| v != "false")
+        .unwrap_or(true)
+}
+
 #[tauri::command]
 pub fn switch_active_ip(
     app: AppHandle,
@@ -290,7 +299,7 @@ pub fn switch_active_ip(
     let after_entry = store::set_active_ip(&tx, &entry_id, &ip_id).map_err(|e| e.to_string())?;
     let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
-    let do_flush = true; // every active-IP change flushes DNS, per spec
+    let do_flush = auto_flush_dns_enabled(&tx); // Settings page toggle, on by default
     let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
@@ -536,4 +545,21 @@ pub fn set_helper_enabled(state: State<AppState>, enabled: bool) -> Result<(), S
     store::set_setting(&conn, "helper_enabled", if enabled { "true" } else { "false" }).map_err(|e| e.to_string())?;
     state.helper_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
     Ok(())
+}
+
+/// Generic settings-table accessors for Settings page preferences that
+/// don't need to be read from inside a write command while `conn` is
+/// already locked (unlike `helper_enabled`, which does — see its comment
+/// on `AppState`). Simple UI preferences can go straight through these
+/// instead of growing a bespoke pair of commands each.
+#[tauri::command]
+pub fn get_setting(state: State<AppState>, key: String) -> Result<Option<String>, String> {
+    let conn = state.conn.lock().unwrap();
+    store::get_setting(&conn, &key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<AppState>, key: String, value: String) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    store::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
 }
