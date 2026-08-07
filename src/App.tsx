@@ -48,6 +48,7 @@ interface State {
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
   | { type: "SET_HISTORY"; history: HistoryEntry[] }
+  | { type: "SET_THEME"; theme: Theme }
   | { type: "SET_HELPER_ACTIVE"; active: boolean }
   | { type: "SET_HELPER_ENABLED"; enabled: boolean }
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
@@ -130,6 +131,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, settingsOpen: false };
     case "TOGGLE_THEME":
       return { ...state, theme: state.theme === "light" ? "dark" : "light" };
+    case "SET_THEME":
+      return { ...state, theme: action.theme };
     case "GO_LIST":
       return { ...state, view: "list", trayOpen: false, groupFilter: null };
     case "GO_HISTORY":
@@ -623,7 +626,9 @@ export default function App() {
           launchAtLogin={state.launchAtLogin}
           autoFlushDns={state.autoFlushDns}
           confirmBeforeSave={state.confirmBeforeSave}
+          theme={state.theme}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
+          onSetTheme={(theme) => dispatch({ type: "SET_THEME", theme })}
           onSetHelperEnabled={handleSetHelperEnabled}
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
           onSetAutoFlushDns={handleSetAutoFlushDns}

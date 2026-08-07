@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import type { ColorTokens } from "../theme";
-import { CloseIcon, WarningIcon } from "./icons";
+import type { ColorTokens, Theme } from "../theme";
+import { CloseIcon, MoonIcon, SunIcon, WarningIcon } from "./icons";
 
 interface SettingsModalProps {
   c: ColorTokens;
@@ -9,11 +9,13 @@ interface SettingsModalProps {
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
+  theme: Theme;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
   onSetAutoFlushDns: (enabled: boolean) => void;
   onSetConfirmBeforeSave: (enabled: boolean) => void;
+  onSetTheme: (theme: Theme) => void;
 }
 
 export function SettingsModal({
@@ -23,11 +25,13 @@ export function SettingsModal({
   launchAtLogin,
   autoFlushDns,
   confirmBeforeSave,
+  theme,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
   onSetAutoFlushDns,
   onSetConfirmBeforeSave,
+  onSetTheme,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -76,6 +80,15 @@ export function SettingsModal({
         </div>
 
         <div style={{ padding: "16px 20px 20px" }}>
+          <SectionLabel c={c}>Appearance</SectionLabel>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>Theme</div>
+            <div style={{ display: "flex", gap: 4, background: c.chipBg, borderRadius: 8, padding: 3 }}>
+              <ThemeOption c={c} active={theme === "light"} onClick={() => onSetTheme("light")} icon={<SunIcon size={13} />} label="Light" />
+              <ThemeOption c={c} active={theme === "dark"} onClick={() => onSetTheme("dark")} icon={<MoonIcon size={13} />} label="Dark" />
+            </div>
+          </div>
+
           <SectionLabel c={c}>General</SectionLabel>
           <ToggleRow
             c={c}
@@ -231,6 +244,43 @@ function ToggleSwitch({ c, checked, onToggle, ariaLabel }: { c: ColorTokens; che
           transition: "transform .15s ease",
         }}
       />
+    </button>
+  );
+}
+
+function ThemeOption({
+  c,
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  c: ColorTokens;
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 10px",
+        borderRadius: 6,
+        border: "none",
+        background: active ? c.cardBg : "transparent",
+        boxShadow: active ? "0 1px 2px rgba(0,0,0,.1)" : "none",
+        color: active ? c.text : c.textMuted,
+        fontSize: 12.5,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      {icon}
+      {label}
     </button>
   );
 }
