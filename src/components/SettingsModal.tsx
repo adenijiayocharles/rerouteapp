@@ -8,10 +8,12 @@ interface SettingsModalProps {
   helperActive: boolean;
   launchAtLogin: boolean;
   autoFlushDns: boolean;
+  confirmBeforeSave: boolean;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
   onSetAutoFlushDns: (enabled: boolean) => void;
+  onSetConfirmBeforeSave: (enabled: boolean) => void;
 }
 
 export function SettingsModal({
@@ -20,10 +22,12 @@ export function SettingsModal({
   helperActive,
   launchAtLogin,
   autoFlushDns,
+  confirmBeforeSave,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
   onSetAutoFlushDns,
+  onSetConfirmBeforeSave,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -90,6 +94,15 @@ export function SettingsModal({
               checked={autoFlushDns}
               onToggle={() => onSetAutoFlushDns(!autoFlushDns)}
             />
+            <div style={{ marginTop: 14 }}>
+              <ToggleRow
+                c={c}
+                title="Always preview before saving"
+                description="Show the diff confirmation for every save, including brand-new entries."
+                checked={confirmBeforeSave}
+                onToggle={() => onSetConfirmBeforeSave(!confirmBeforeSave)}
+              />
+            </div>
           </div>
 
           <div style={{ marginTop: 20 }}>

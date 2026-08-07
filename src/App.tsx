@@ -42,6 +42,7 @@ interface State {
   settingsOpen: boolean;
   launchAtLogin: boolean;
   autoFlushDns: boolean;
+  confirmBeforeSave: boolean;
 }
 
 type Action =
@@ -51,6 +52,7 @@ type Action =
   | { type: "SET_HELPER_ENABLED"; enabled: boolean }
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
   | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
+  | { type: "SET_CONFIRM_BEFORE_SAVE"; enabled: boolean }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
   | { type: "TOGGLE_THEME" }
@@ -103,6 +105,7 @@ const initialState: State = {
   settingsOpen: false,
   launchAtLogin: false,
   autoFlushDns: true,
+  confirmBeforeSave: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -119,6 +122,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, launchAtLogin: action.enabled };
     case "SET_AUTO_FLUSH_DNS":
       return { ...state, autoFlushDns: action.enabled };
+    case "SET_CONFIRM_BEFORE_SAVE":
+      return { ...state, confirmBeforeSave: action.enabled };
     case "OPEN_SETTINGS":
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
@@ -267,6 +272,7 @@ export default function App() {
     api.getHelperEnabled().then((enabled) => dispatch({ type: "SET_HELPER_ENABLED", enabled })).catch(() => {});
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
     api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
+    api.getConfirmBeforeSave().then((enabled) => dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled })).catch(() => {});
   }, []);
 
   async function handleSetHelperEnabled(enabled: boolean) {
@@ -303,6 +309,15 @@ export default function App() {
       dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update DNS auto-flush", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetConfirmBeforeSave(enabled: boolean) {
+    try {
+      await api.setConfirmBeforeSave(enabled);
+      dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update save confirmation", message: errorMessage(err) } });
     }
   }
 
@@ -370,9 +385,10 @@ export default function App() {
     if (!draft) return;
 
     // New entries save immediately with no review step, unless the
-    // hostname is a well-known system domain — then fall through to the
-    // usual preview/diff confirmation so that warning still gets shown.
-    if (draft.id === null) {
+    // hostname is a well-known system domain (then fall through to the
+    // usual preview/diff confirmation so that warning still gets shown)
+    // or the user has turned on "always confirm before saving".
+    if (draft.id === null && !state.confirmBeforeSave) {
       try {
         const isShadow = await api.isShadowDomain(draft.hostname);
         if (isShadow) {
@@ -606,10 +622,12 @@ export default function App() {
           helperActive={state.helperActive}
           launchAtLogin={state.launchAtLogin}
           autoFlushDns={state.autoFlushDns}
+          confirmBeforeSave={state.confirmBeforeSave}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
           onSetHelperEnabled={handleSetHelperEnabled}
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
           onSetAutoFlushDns={handleSetAutoFlushDns}
+          onSetConfirmBeforeSave={handleSetConfirmBeforeSave}
         />
       )}
 

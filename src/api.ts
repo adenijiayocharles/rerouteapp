@@ -34,4 +34,9 @@ export const api = {
   getAutoFlushDns: () => invoke<string | null>("get_setting", { key: "auto_flush_dns" }).then((v) => v !== "false"),
   setAutoFlushDns: (enabled: boolean) =>
     invoke<void>("set_setting", { key: "auto_flush_dns", value: enabled ? "true" : "false" }),
+
+  getConfirmBeforeSave: () =>
+    invoke<string | null>("get_setting", { key: "confirm_before_save" }).then((v) => v === "true"),
+  setConfirmBeforeSave: (enabled: boolean) =>
+    invoke<void>("set_setting", { key: "confirm_before_save", value: enabled ? "true" : "false" }),
 };
