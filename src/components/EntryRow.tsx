@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
 import { CheckIcon, ChevronDownIcon, EditIcon, Spinner } from "./icons";
@@ -28,6 +29,18 @@ export function EntryRow({
   onSwitchIp,
 }: EntryRowProps) {
   const activeIp = entry.ips.find((i) => i.id === entry.activeIpId) ?? entry.ips[0];
+  const ipMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (ipMenuRef.current && !ipMenuRef.current.contains(e.target as Node)) {
+        onToggleDropdown();
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isDropdownOpen, onToggleDropdown]);
 
   return (
     <div
@@ -95,7 +108,7 @@ export function EntryRow({
         )}
       </div>
 
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }} ref={ipMenuRef}>
         <button
           onClick={onToggleDropdown}
           disabled={disabled}
