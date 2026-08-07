@@ -258,6 +258,7 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, draft: EntryDraft) -
         Some(&backup_path),
     )
     .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {
@@ -265,6 +266,20 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, draft: EntryDraft) -
         flush_ok: None,
         flush_message: None,
     })
+}
+
+/// Reads the Settings page "History retention" limit. Defaults to 200
+/// when unset; the "unlimited" option maps to `None` (no pruning).
+fn history_retention_limit(conn: &rusqlite::Connection) -> Option<i64> {
+    match store::get_setting(conn, "history_retention").ok().flatten() {
+        None => Some(200),
+        Some(v) if v == "unlimited" => None,
+        Some(v) => v.parse::<i64>().ok().or(Some(200)),
+    }
+}
+
+fn prune_history(conn: &rusqlite::Connection) -> Result<(), String> {
+    store::prune_history(conn, history_retention_limit(conn)).map_err(|e| e.to_string())
 }
 
 /// Reads the Settings page "Auto-flush DNS" toggle (on by default).
@@ -315,6 +330,7 @@ pub fn switch_active_ip(
         Some(&backup_path),
     )
     .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
 
     let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, &target_ip.ip);
@@ -351,6 +367,7 @@ pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) 
         Some(&backup_path),
     )
     .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {
@@ -462,6 +479,7 @@ pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: Strin
         Some(&backup_path),
     )
     .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(WriteResult {

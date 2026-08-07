@@ -62,6 +62,8 @@ export interface WriteResult {
   flushMessage: string | null;
 }
 
+export type HistoryRetention = "50" | "100" | "200" | "unlimited";
+
 export type ToastType = "success" | "error" | "info";
 
 export interface ToastState {

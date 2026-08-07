@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { ColorTokens, Theme } from "../theme";
+import type { HistoryRetention } from "../types";
 import { CloseIcon, MoonIcon, SunIcon, WarningIcon } from "./icons";
 
 interface SettingsModalProps {
@@ -10,12 +11,14 @@ interface SettingsModalProps {
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
   theme: Theme;
+  historyRetention: HistoryRetention;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
   onSetAutoFlushDns: (enabled: boolean) => void;
   onSetConfirmBeforeSave: (enabled: boolean) => void;
   onSetTheme: (theme: Theme) => void;
+  onSetHistoryRetention: (value: HistoryRetention) => void;
 }
 
 export function SettingsModal({
@@ -26,12 +29,14 @@ export function SettingsModal({
   autoFlushDns,
   confirmBeforeSave,
   theme,
+  historyRetention,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
   onSetAutoFlushDns,
   onSetConfirmBeforeSave,
   onSetTheme,
+  onSetHistoryRetention,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -115,6 +120,39 @@ export function SettingsModal({
                 checked={confirmBeforeSave}
                 onToggle={() => onSetConfirmBeforeSave(!confirmBeforeSave)}
               />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel c={c}>Data</SectionLabel>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>History retention</div>
+                <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 4, lineHeight: 1.5 }}>
+                  Older entries are pruned automatically after each change.
+                </div>
+              </div>
+              <select
+                value={historyRetention}
+                onChange={(e) => onSetHistoryRetention(e.target.value as HistoryRetention)}
+                style={{
+                  height: 30,
+                  padding: "0 8px",
+                  borderRadius: 7,
+                  border: `1px solid ${c.border}`,
+                  background: c.inputBg,
+                  color: c.text,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  flex: "none",
+                }}
+              >
+                <option value="50">Last 50</option>
+                <option value="100">Last 100</option>
+                <option value="200">Last 200</option>
+                <option value="unlimited">Unlimited</option>
+              </select>
             </div>
           </div>
 

@@ -421,3 +421,68 @@ pub fn seed_from_existing_managed_block(
     }
     Ok(())
 }
+
+/// Deletes history rows beyond the most recent `keep`. `None` leaves
+/// history untouched (the "unlimited" Settings option).
+pub fn prune_history(conn: &Connection, keep: Option<i64>) -> rusqlite::Result<()> {
+    let Some(keep) = keep else { return Ok(()) };
+    conn.execute(
+        "DELETE FROM history WHERE id NOT IN (
+            SELECT id FROM history ORDER BY created_at DESC, rowid DESC LIMIT ?1
+        )",
+        params![keep],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn).unwrap();
+        conn
+    }
+
+    fn insert_n_history_rows(conn: &Connection, n: usize) {
+        for i in 0..n {
+            insert_history(conn, &format!("host{i}.test"), "Added entry", None, None, None, None).unwrap();
+        }
+    }
+
+    #[test]
+    fn prune_history_keeps_only_the_most_recent_n() {
+        let conn = setup();
+        insert_n_history_rows(&conn, 5);
+
+        prune_history(&conn, Some(2)).unwrap();
+
+        let remaining = list_history(&conn).unwrap();
+        assert_eq!(remaining.len(), 2);
+        // list_history orders by created_at DESC, so the survivors should
+        // be the two most recently inserted.
+        assert_eq!(remaining[0].hostname, "host4.test");
+        assert_eq!(remaining[1].hostname, "host3.test");
+    }
+
+    #[test]
+    fn prune_history_is_a_noop_when_under_the_limit() {
+        let conn = setup();
+        insert_n_history_rows(&conn, 3);
+
+        prune_history(&conn, Some(10)).unwrap();
+
+        assert_eq!(list_history(&conn).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn prune_history_none_keeps_everything() {
+        let conn = setup();
+        insert_n_history_rows(&conn, 5);
+
+        prune_history(&conn, None).unwrap();
+
+        assert_eq!(list_history(&conn).unwrap().len(), 5);
+    }
+}

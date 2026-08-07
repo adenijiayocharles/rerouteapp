@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, WriteResult } from "./types";
+import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, WriteResult } from "./types";
 
 export const api = {
   listEntries: () => invoke<Entry[]>("list_entries"),
@@ -39,4 +39,8 @@ export const api = {
     invoke<string | null>("get_setting", { key: "confirm_before_save" }).then((v) => v === "true"),
   setConfirmBeforeSave: (enabled: boolean) =>
     invoke<void>("set_setting", { key: "confirm_before_save", value: enabled ? "true" : "false" }),
+
+  getHistoryRetention: () =>
+    invoke<string | null>("get_setting", { key: "history_retention" }).then((v) => (v ?? "200") as HistoryRetention),
+  setHistoryRetention: (value: HistoryRetention) => invoke<void>("set_setting", { key: "history_retention", value }),
 };

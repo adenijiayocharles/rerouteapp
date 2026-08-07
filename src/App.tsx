@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { api } from "./api";
 import { colorsFor, type Theme } from "./theme";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, ToastState } from "./types";
+import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, ToastState } from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ListView } from "./components/ListView";
@@ -43,6 +43,7 @@ interface State {
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
+  historyRetention: HistoryRetention;
 }
 
 type Action =
@@ -54,6 +55,7 @@ type Action =
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
   | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
   | { type: "SET_CONFIRM_BEFORE_SAVE"; enabled: boolean }
+  | { type: "SET_HISTORY_RETENTION"; value: HistoryRetention }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
   | { type: "TOGGLE_THEME" }
@@ -107,6 +109,7 @@ const initialState: State = {
   launchAtLogin: false,
   autoFlushDns: true,
   confirmBeforeSave: false,
+  historyRetention: "200",
 };
 
 function reducer(state: State, action: Action): State {
@@ -125,6 +128,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, autoFlushDns: action.enabled };
     case "SET_CONFIRM_BEFORE_SAVE":
       return { ...state, confirmBeforeSave: action.enabled };
+    case "SET_HISTORY_RETENTION":
+      return { ...state, historyRetention: action.value };
     case "OPEN_SETTINGS":
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
@@ -276,6 +281,7 @@ export default function App() {
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
     api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
     api.getConfirmBeforeSave().then((enabled) => dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled })).catch(() => {});
+    api.getHistoryRetention().then((value) => dispatch({ type: "SET_HISTORY_RETENTION", value })).catch(() => {});
   }, []);
 
   async function handleSetHelperEnabled(enabled: boolean) {
@@ -321,6 +327,15 @@ export default function App() {
       dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update save confirmation", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetHistoryRetention(value: HistoryRetention) {
+    try {
+      await api.setHistoryRetention(value);
+      dispatch({ type: "SET_HISTORY_RETENTION", value });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update history retention", message: errorMessage(err) } });
     }
   }
 
@@ -627,12 +642,14 @@ export default function App() {
           autoFlushDns={state.autoFlushDns}
           confirmBeforeSave={state.confirmBeforeSave}
           theme={state.theme}
+          historyRetention={state.historyRetention}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
           onSetTheme={(theme) => dispatch({ type: "SET_THEME", theme })}
           onSetHelperEnabled={handleSetHelperEnabled}
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
           onSetAutoFlushDns={handleSetAutoFlushDns}
           onSetConfirmBeforeSave={handleSetConfirmBeforeSave}
+          onSetHistoryRetention={handleSetHistoryRetention}
         />
       )}
 
