@@ -101,6 +101,13 @@ fn backup_and_write(
 
     let flush_cmd = if do_flush { dns_flush::flush_command() } else { None };
 
+    let plain_elevated_write = |content: &str| -> Result<elevate::WriteOutcome, String> {
+        let staging_path = state.backups_dir.join(".staging-hosts");
+        hosts_parser::atomic_write(&staging_path, content)
+            .map_err(|e| format!("Failed to stage the hosts file: {e}"))?;
+        elevate::write_hosts_file(state.executor.as_ref(), &staging_path, &state.hosts_path, flush_cmd.as_deref())
+    };
+
     let outcome = if helper_client::ping() {
         let write_ok = helper_client::write_hosts(&new_content).is_ok();
         let flush_ok = if write_ok && do_flush {
@@ -109,7 +116,7 @@ fn backup_and_write(
             None
         };
         elevate::WriteOutcome { write_ok, flush_ok }
-    } else {
+    } else if state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed) {
         match helper_install::install_and_write(
             app,
             state.executor.as_ref(),
@@ -123,17 +130,13 @@ fn backup_and_write(
                 // Couldn't install the daemon (e.g. its binary isn't present
                 // in this build) — fall back to a plain per-write elevation
                 // so the app still works, just with a prompt every time.
-                let staging_path = state.backups_dir.join(".staging-hosts");
-                hosts_parser::atomic_write(&staging_path, &new_content)
-                    .map_err(|e| format!("Failed to stage the hosts file: {e}"))?;
-                elevate::write_hosts_file(
-                    state.executor.as_ref(),
-                    &staging_path,
-                    &state.hosts_path,
-                    flush_cmd.as_deref(),
-                )?
+                plain_elevated_write(&new_content)?
             }
         }
+    } else {
+        // The user turned the background helper off in Settings — never
+        // auto-install it, just prompt for a password on every write.
+        plain_elevated_write(&new_content)?
     };
 
     if !outcome.write_ok {
@@ -515,4 +518,22 @@ pub fn helper_status() -> bool {
 pub fn uninstall_helper(state: State<AppState>) -> Result<(), String> {
     let cmd = elevate::build_uninstall_command();
     state.executor.run_privileged_shell(&cmd).map(|_| ())
+}
+
+/// Whether the app is allowed to auto-install the background helper on
+/// the next write (Settings page toggle; on by default).
+#[tauri::command]
+pub fn get_helper_enabled(state: State<AppState>) -> bool {
+    state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Persists the Settings page toggle. Does not itself install or remove
+/// the helper daemon — the frontend calls `uninstall_helper` separately
+/// when turning this off while the helper is currently active.
+#[tauri::command]
+pub fn set_helper_enabled(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    store::set_setting(&conn, "helper_enabled", if enabled { "true" } else { "false" }).map_err(|e| e.to_string())?;
+    state.helper_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
 }

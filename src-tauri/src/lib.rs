@@ -19,6 +19,10 @@ use state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let app_data_dir = app
                 .path()
@@ -39,7 +43,13 @@ pub fn run() {
                 store::seed_from_existing_managed_block(&conn, &parsed_lines)?;
             }
 
-            let app_state = AppState::new(app_data_dir, conn);
+            let helper_enabled = store::get_setting(&conn, "helper_enabled")
+                .ok()
+                .flatten()
+                .map(|v| v != "false")
+                .unwrap_or(true);
+
+            let app_state = AppState::new(app_data_dir, conn, helper_enabled);
             let last_written = app_state.last_written.clone();
             let hosts_path = app_state.hosts_path.clone();
             app.manage(app_state);
@@ -65,6 +75,8 @@ pub fn run() {
             commands::flush_dns,
             commands::helper_status,
             commands::uninstall_helper,
+            commands::get_helper_enabled,
+            commands::set_helper_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

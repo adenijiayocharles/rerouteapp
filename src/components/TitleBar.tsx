@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ColorTokens, Theme } from "../theme";
 import type { Entry } from "../types";
-import { MoonIcon, SunIcon, TrayIcon } from "./icons";
+import { GearIcon, MoonIcon, SunIcon, TrayIcon } from "./icons";
 import { QuickSwitchTray } from "./QuickSwitchTray";
 
 interface TitleBarProps {
@@ -15,6 +15,7 @@ interface TitleBarProps {
   entries: Entry[];
   onSwitchIp: (entryId: string, ipId: string) => void;
   onFlushDns: () => void;
+  onOpenSettings: () => void;
 }
 
 const appWindow = getCurrentWindow();
@@ -91,6 +92,7 @@ export function TitleBar({
   entries,
   onSwitchIp,
   onFlushDns,
+  onOpenSettings,
 }: TitleBarProps) {
   const isDark = theme === "dark";
   return (
@@ -149,6 +151,15 @@ export function TitleBar({
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
         {isDark ? <SunIcon color={c.textMuted} /> : <MoonIcon color={c.textMuted} />}
+      </button>
+      <button
+        onClick={onOpenSettings}
+        title="Settings"
+        style={titleBarButtonStyle(c)}
+        onMouseEnter={(e) => (e.currentTarget.style.background = c.rowHover)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = c.trayBtnBg)}
+      >
+        <GearIcon color={c.textMuted} />
       </button>
     </div>
   );

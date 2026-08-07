@@ -16,8 +16,6 @@ interface SidebarProps {
   groups: GroupSummary[];
   groupFilter: string | null;
   onSelectGroup: (group: string) => void;
-  helperActive: boolean;
-  onRemoveHelper: () => void;
 }
 
 export function Sidebar({
@@ -29,8 +27,6 @@ export function Sidebar({
   groups,
   groupFilter,
   onSelectGroup,
-  helperActive,
-  onRemoveHelper,
 }: SidebarProps) {
   return (
     <div
@@ -114,38 +110,6 @@ export function Sidebar({
         /etc/hosts
         <br />
         Managed by Hosts Manager
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: helperActive ? c.green : c.textFaint,
-              flex: "none",
-            }}
-          />
-          <span title={helperActive ? "Writes and DNS flushes happen without a password prompt." : "The next write will prompt once to install it."}>
-            {helperActive ? "Background helper active" : "Background helper not installed"}
-          </span>
-          {helperActive && (
-            <button
-              onClick={onRemoveHelper}
-              style={{
-                marginLeft: "auto",
-                fontSize: 11,
-                fontWeight: 600,
-                color: c.textMuted,
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                textDecoration: "underline",
-              }}
-            >
-              Remove
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

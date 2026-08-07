@@ -12,6 +12,7 @@ import { DraftPanel } from "./components/DraftPanel";
 import { DiffModal } from "./components/DiffModal";
 import { Toast } from "./components/Toast";
 import { ReloadBanner } from "./components/ReloadBanner";
+import { SettingsModal } from "./components/SettingsModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const THEME_STORAGE_KEY = "hosts-manager-theme";
@@ -37,12 +38,19 @@ interface State {
   trayOpen: boolean;
   externalChangeDetected: boolean;
   helperActive: boolean;
+  helperEnabled: boolean;
+  settingsOpen: boolean;
+  launchAtLogin: boolean;
 }
 
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
   | { type: "SET_HISTORY"; history: HistoryEntry[] }
   | { type: "SET_HELPER_ACTIVE"; active: boolean }
+  | { type: "SET_HELPER_ENABLED"; enabled: boolean }
+  | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
+  | { type: "OPEN_SETTINGS" }
+  | { type: "CLOSE_SETTINGS" }
   | { type: "TOGGLE_THEME" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
@@ -89,6 +97,9 @@ const initialState: State = {
   trayOpen: false,
   externalChangeDetected: false,
   helperActive: false,
+  helperEnabled: true,
+  settingsOpen: false,
+  launchAtLogin: false,
 };
 
 function reducer(state: State, action: Action): State {
@@ -99,6 +110,14 @@ function reducer(state: State, action: Action): State {
       return { ...state, history: action.history };
     case "SET_HELPER_ACTIVE":
       return { ...state, helperActive: action.active };
+    case "SET_HELPER_ENABLED":
+      return { ...state, helperEnabled: action.enabled };
+    case "SET_LAUNCH_AT_LOGIN":
+      return { ...state, launchAtLogin: action.enabled };
+    case "OPEN_SETTINGS":
+      return { ...state, settingsOpen: true };
+    case "CLOSE_SETTINGS":
+      return { ...state, settingsOpen: false };
     case "TOGGLE_THEME":
       return { ...state, theme: state.theme === "light" ? "dark" : "light" };
     case "GO_LIST":
@@ -240,18 +259,35 @@ export default function App() {
     );
     refreshHistory().catch(() => {});
     refreshHelperStatus().catch(() => {});
+    api.getHelperEnabled().then((enabled) => dispatch({ type: "SET_HELPER_ENABLED", enabled })).catch(() => {});
+    api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
   }, []);
 
-  async function handleRemoveHelper() {
+  async function handleSetHelperEnabled(enabled: boolean) {
     try {
-      await api.uninstallHelper();
+      if (!enabled && state.helperActive) {
+        await api.uninstallHelper();
+      }
+      await api.setHelperEnabled(enabled);
+      dispatch({ type: "SET_HELPER_ENABLED", enabled });
       await refreshHelperStatus();
       dispatch({
         type: "SET_TOAST",
-        toast: { type: "success", title: "Background helper removed", message: "The next write will prompt for your password again." },
+        toast: enabled
+          ? { type: "success", title: "Background helper enabled", message: "It will be installed on the next write." }
+          : { type: "success", title: "Background helper disabled", message: "The next write will prompt for your password." },
       });
     } catch (err) {
-      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't remove the helper", message: errorMessage(err) } });
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update the background helper", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetLaunchAtLogin(enabled: boolean) {
+    try {
+      await api.setLaunchAtLogin(enabled);
+      dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update launch at login", message: errorMessage(err) } });
     }
   }
 
@@ -481,6 +517,7 @@ export default function App() {
         entries={state.entries}
         onSwitchIp={handleSwitchIp}
         onFlushDns={handleFlushDns}
+        onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })}
       />
 
       {state.externalChangeDetected && (
@@ -497,8 +534,6 @@ export default function App() {
           groups={groups}
           groupFilter={state.groupFilter}
           onSelectGroup={(g) => dispatch({ type: "SELECT_GROUP", group: g })}
-          helperActive={state.helperActive}
-          onRemoveHelper={handleRemoveHelper}
         />
 
         {state.view === "list" ? (
@@ -546,6 +581,18 @@ export default function App() {
           diff={state.diff}
           onCancel={() => dispatch({ type: "CLOSE_DIFF" })}
           onConfirm={handleConfirmDiff}
+        />
+      )}
+
+      {state.settingsOpen && (
+        <SettingsModal
+          c={c}
+          helperEnabled={state.helperEnabled}
+          helperActive={state.helperActive}
+          launchAtLogin={state.launchAtLogin}
+          onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
+          onSetHelperEnabled={handleSetHelperEnabled}
+          onSetLaunchAtLogin={handleSetLaunchAtLogin}
         />
       )}
 

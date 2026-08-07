@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
 import type { DiffPreview, Entry, EntryDraft, HistoryEntry, WriteResult } from "./types";
 
 export const api = {
@@ -21,4 +22,9 @@ export const api = {
 
   helperStatus: () => invoke<boolean>("helper_status"),
   uninstallHelper: () => invoke<void>("uninstall_helper"),
+  getHelperEnabled: () => invoke<boolean>("get_helper_enabled"),
+  setHelperEnabled: (enabled: boolean) => invoke<void>("set_helper_enabled", { enabled }),
+
+  getLaunchAtLogin: () => isAutostartEnabled(),
+  setLaunchAtLogin: (enabled: boolean) => (enabled ? enableAutostart() : disableAutostart()),
 };
