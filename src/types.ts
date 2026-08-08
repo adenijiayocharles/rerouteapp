@@ -40,6 +40,13 @@ export interface EntryDraft {
   ips: IpDraft[];
 }
 
+export interface UnmanagedEntry {
+  id: string;
+  ip: string;
+  hostname: string;
+  comment: string;
+}
+
 export interface DiffLine {
   kind: "same" | "added" | "removed";
   text: string;
@@ -51,7 +58,7 @@ export interface LintDiagnostic {
   message: string;
 }
 
-export type DiffMode = "save" | "restore" | "view" | "delete" | "raw";
+export type DiffMode = "save" | "restore" | "view" | "delete" | "raw" | "adopt";
 
 export interface DiffPreview {
   mode: DiffMode;

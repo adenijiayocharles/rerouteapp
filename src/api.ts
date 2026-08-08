@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, LintDiagnostic, WriteResult } from "./types";
+import type {
+  DiffPreview,
+  Entry,
+  EntryDraft,
+  HistoryEntry,
+  HistoryRetention,
+  LintDiagnostic,
+  UnmanagedEntry,
+  WriteResult,
+} from "./types";
 
 export const api = {
   listEntries: () => invoke<Entry[]>("list_entries"),
@@ -20,6 +29,11 @@ export const api = {
 
   previewDelete: (entryId: string) => invoke<DiffPreview>("preview_delete", { entryId }),
   confirmDelete: (entryId: string) => invoke<WriteResult>("confirm_delete", { entryId }),
+
+  listUnmanagedEntries: () => invoke<UnmanagedEntry[]>("list_unmanaged_entries"),
+  previewAdopt: (id: string) => invoke<DiffPreview>("preview_adopt", { id }),
+  confirmAdopt: (id: string) => invoke<WriteResult>("confirm_adopt", { id }),
+  confirmAdoptMany: (ids: string[]) => invoke<Entry[]>("confirm_adopt_many", { ids }),
 
   readHostsFile: () => invoke<string>("read_hosts_file"),
   previewRawSave: (content: string) => invoke<DiffPreview>("preview_raw_save", { content }),

@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { api } from "./api";
 import { colorsFor, type Theme, type ThemePreference } from "./theme";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, ToastState } from "./types";
+import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, ToastState, UnmanagedEntry } from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ListView } from "./components/ListView";
@@ -14,6 +14,7 @@ import { DiffModal } from "./components/DiffModal";
 import { Toast } from "./components/Toast";
 import { ReloadBanner } from "./components/ReloadBanner";
 import { SettingsModal } from "./components/SettingsModal";
+import { OnboardingModal } from "./components/OnboardingModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const THEME_STORAGE_KEY = "hosts-manager-theme";
@@ -34,6 +35,9 @@ interface State {
   search: string;
   groupFilter: string | null;
   entries: Entry[];
+  unmanagedEntries: UnmanagedEntry[];
+  showOnboarding: boolean;
+  onboardingEntries: UnmanagedEntry[];
   history: HistoryEntry[];
   openIpMenuId: string | null;
   flushingId: string | null;
@@ -42,6 +46,7 @@ interface State {
   pendingDraft: EntryDraft | null;
   pendingRestoreId: string | null;
   pendingDeleteId: string | null;
+  pendingAdoptId: string | null;
   pendingRawSave: string | null;
   rawFileContent: string | null;
   rawDraftContent: string | null;
@@ -59,6 +64,9 @@ interface State {
 
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
+  | { type: "SET_UNMANAGED_ENTRIES"; entries: UnmanagedEntry[] }
+  | { type: "SHOW_ONBOARDING"; entries: UnmanagedEntry[] }
+  | { type: "HIDE_ONBOARDING" }
   | { type: "SET_HISTORY"; history: HistoryEntry[] }
   | { type: "SET_THEME_PREFERENCE"; preference: ThemePreference }
   | { type: "SET_SYSTEM_PREFERS_DARK"; prefersDark: boolean }
@@ -100,6 +108,7 @@ type Action =
       pendingDraft: EntryDraft | null;
       pendingRestoreId: string | null;
       pendingDeleteId: string | null;
+      pendingAdoptId: string | null;
       pendingRawSave: string | null;
     }
   | { type: "CLOSE_DIFF" }
@@ -115,6 +124,9 @@ const initialState: State = {
   search: "",
   groupFilter: null,
   entries: [],
+  unmanagedEntries: [],
+  showOnboarding: false,
+  onboardingEntries: [],
   history: [],
   openIpMenuId: null,
   flushingId: null,
@@ -123,6 +135,7 @@ const initialState: State = {
   pendingDraft: null,
   pendingRestoreId: null,
   pendingDeleteId: null,
+  pendingAdoptId: null,
   pendingRawSave: null,
   rawFileContent: null,
   rawDraftContent: null,
@@ -142,6 +155,12 @@ function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "SET_ENTRIES":
       return { ...state, entries: action.entries };
+    case "SET_UNMANAGED_ENTRIES":
+      return { ...state, unmanagedEntries: action.entries };
+    case "SHOW_ONBOARDING":
+      return { ...state, showOnboarding: true, onboardingEntries: action.entries };
+    case "HIDE_ONBOARDING":
+      return { ...state, showOnboarding: false };
     case "SET_HISTORY":
       return { ...state, history: action.history };
     case "SET_HELPER_ACTIVE":
@@ -270,12 +289,30 @@ function reducer(state: State, action: Action): State {
         pendingDraft: action.pendingDraft,
         pendingRestoreId: action.pendingRestoreId,
         pendingDeleteId: action.pendingDeleteId,
+        pendingAdoptId: action.pendingAdoptId,
         pendingRawSave: action.pendingRawSave,
       };
     case "CLOSE_DIFF":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null };
+      return {
+        ...state,
+        diff: null,
+        pendingDraft: null,
+        pendingRestoreId: null,
+        pendingDeleteId: null,
+        pendingAdoptId: null,
+        pendingRawSave: null,
+      };
     case "CLOSE_DIFF_AND_DRAFT":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null, editingDraft: null };
+      return {
+        ...state,
+        diff: null,
+        pendingDraft: null,
+        pendingRestoreId: null,
+        pendingDeleteId: null,
+        pendingAdoptId: null,
+        pendingRawSave: null,
+        editingDraft: null,
+      };
     case "SET_TOAST":
       return { ...state, toast: action.toast };
     case "EXTERNAL_CHANGE_DETECTED":
@@ -302,6 +339,11 @@ export default function App() {
     dispatch({ type: "SET_ENTRIES", entries });
   }
 
+  async function refreshUnmanagedEntries() {
+    const entries = await api.listUnmanagedEntries();
+    dispatch({ type: "SET_UNMANAGED_ENTRIES", entries });
+  }
+
   async function refreshHistory() {
     const history = await api.getHistory();
     dispatch({ type: "SET_HISTORY", history });
@@ -317,10 +359,26 @@ export default function App() {
     dispatch({ type: "SET_RAW_FILE_CONTENT", content });
   }
 
+  async function checkOnboarding() {
+    try {
+      const seen = await api.getSetting("onboarding_seen");
+      if (seen === "true") return;
+      const [entries, unmanaged] = await Promise.all([api.listEntries(), api.listUnmanagedEntries()]);
+      if (entries.length === 0 && unmanaged.length > 0) {
+        dispatch({ type: "SHOW_ONBOARDING", entries: unmanaged });
+      }
+      await api.setSetting("onboarding_seen", "true");
+    } catch {
+      // Onboarding is best-effort — if it can't be determined this launch, just skip it.
+    }
+  }
+
   useEffect(() => {
     refreshEntries().catch((err) =>
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to load entries", message: errorMessage(err) } }),
     );
+    refreshUnmanagedEntries().catch(() => {});
+    checkOnboarding();
     refreshHistory().catch(() => {});
     refreshHelperStatus().catch(() => {});
     refreshRawFile().catch(() => {});
@@ -421,6 +479,14 @@ export default function App() {
     });
   }, [state.entries, state.search, state.groupFilter]);
 
+  const filteredUnmanagedEntries = useMemo(() => {
+    const search = state.search.trim().toLowerCase();
+    if (!search) return state.unmanagedEntries;
+    return state.unmanagedEntries.filter(
+      (e) => e.hostname.toLowerCase().includes(search) || (e.comment || "").toLowerCase().includes(search),
+    );
+  }, [state.unmanagedEntries, state.search]);
+
   const groups = useMemo(() => {
     const names = Array.from(new Set(state.entries.filter((e) => e.group).map((e) => e.group))).sort();
     return names.map((name) => ({ name, count: state.entries.filter((e) => e.group === name).length }));
@@ -430,6 +496,7 @@ export default function App() {
     dispatch({ type: "DISMISS_EXTERNAL_CHANGE" });
     try {
       await refreshEntries();
+      await refreshUnmanagedEntries();
       await refreshHistory();
       await refreshRawFile();
       dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Reloaded", message: "Loaded the latest hosts file." } });
@@ -466,7 +533,7 @@ export default function App() {
         const isShadow = await api.isShadowDomain(draft.hostname);
         if (isShadow) {
           const diff = await api.previewSave(draft);
-          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
+          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
           return;
         }
         await performConfirmSave(draft, true);
@@ -479,7 +546,7 @@ export default function App() {
 
     try {
       const diff = await api.previewSave(draft);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
     }
@@ -488,7 +555,7 @@ export default function App() {
   async function handleViewHistoryDiff(id: string) {
     try {
       const diff = await api.historyDiff(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't load diff", message: errorMessage(err) } });
     }
@@ -497,7 +564,7 @@ export default function App() {
   async function handleRequestRestore(id: string) {
     try {
       const diff = await api.previewRestore(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id, pendingDeleteId: null, pendingRawSave: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview restore", message: errorMessage(err) } });
     }
@@ -506,28 +573,65 @@ export default function App() {
   async function handleRequestDelete(entryId: string) {
     try {
       const diff = await api.previewDelete(entryId);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: entryId, pendingRawSave: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: entryId, pendingAdoptId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview delete", message: errorMessage(err) } });
     }
   }
 
+  async function handleRequestAdopt(id: string) {
+    try {
+      const diff = await api.previewAdopt(id);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: id, pendingRawSave: null });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview adopt", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleAdoptSelected(ids: string[]) {
+    await api.confirmAdoptMany(ids);
+    dispatch({ type: "HIDE_ONBOARDING" });
+    await refreshEntries();
+    await refreshUnmanagedEntries();
+    await refreshHistory();
+    refreshHelperStatus().catch(() => {});
+    dispatch({
+      type: "SET_TOAST",
+      toast: { type: "success", title: "Entries adopted", message: `${ids.length} ${ids.length === 1 ? "entry is" : "entries are"} now managed by Hosts Manager.` },
+    });
+  }
+
+  function handleSkipOnboarding() {
+    dispatch({ type: "HIDE_ONBOARDING" });
+  }
+
   async function handleRequestRawSave(content: string) {
     try {
       const diff = await api.previewRawSave(content);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: content });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: content });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
     }
   }
 
   async function handleConfirmDiff() {
-    const { diff, pendingDraft, pendingRestoreId, pendingDeleteId, pendingRawSave } = state;
+    const { diff, pendingDraft, pendingRestoreId, pendingDeleteId, pendingAdoptId, pendingRawSave } = state;
     if (!diff) return;
     try {
       if (diff.mode === "save" && pendingDraft) {
         await performConfirmSave(pendingDraft, diff.isNew);
         dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
+      } else if (diff.mode === "adopt" && pendingAdoptId) {
+        const result = await api.confirmAdopt(pendingAdoptId);
+        if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+        dispatch({ type: "CLOSE_DIFF" });
+        await refreshUnmanagedEntries();
+        await refreshHistory();
+        refreshHelperStatus().catch(() => {});
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "success", title: "Entry adopted", message: `${result.entry?.hostname ?? "The entry"} is now managed by Hosts Manager.` },
+        });
       } else if (diff.mode === "restore" && pendingRestoreId) {
         const result = await api.confirmRestore(pendingRestoreId);
         if (diff.isRemoval) {
@@ -552,6 +656,7 @@ export default function App() {
         dispatch({ type: "SET_RAW_FILE_CONTENT", content: pendingRawSave });
         dispatch({ type: "CLOSE_DIFF" });
         await refreshEntries();
+        await refreshUnmanagedEntries();
         await refreshHistory();
         refreshHelperStatus().catch(() => {});
         dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Hosts file saved", message: "Your changes have been written to the hosts file." } });
@@ -682,6 +787,7 @@ export default function App() {
             c={c}
             entries={filteredEntries}
             totalEntryCount={state.entries.length}
+            unmanagedEntries={state.groupFilter ? [] : filteredUnmanagedEntries}
             search={state.search}
             onSearchChange={(v) => dispatch({ type: "SET_SEARCH", value: v })}
             onAddClick={() => dispatch({ type: "OPEN_ADD_PANEL" })}
@@ -694,6 +800,7 @@ export default function App() {
             onToggleEnabled={handleToggleEnabled}
             onEdit={(entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry })}
             onSwitchIp={handleSwitchIp}
+            onAdopt={handleRequestAdopt}
           />
         ) : state.view === "history" ? (
           <HistoryView c={c} history={state.history} onViewDiff={handleViewHistoryDiff} onRestore={handleRequestRestore} />
@@ -765,6 +872,10 @@ export default function App() {
           onDismiss={() => dispatch({ type: "SET_TOAST", toast: null })}
           onRetryFlush={handleFlushDns}
         />
+      )}
+
+      {state.showOnboarding && (
+        <OnboardingModal c={c} entries={state.onboardingEntries} onAdopt={handleAdoptSelected} onSkip={handleSkipOnboarding} />
       )}
     </div>
   );

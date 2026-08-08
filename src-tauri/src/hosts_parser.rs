@@ -3,10 +3,19 @@ use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
 use crate::models::Entry;
+use crate::validate;
 
 pub const START_MARKER: &str = "# hosts-manager:start";
 pub const END_MARKER: &str = "# hosts-manager:end";
+
+/// Docker Desktop writes and rewrites this exact block itself; lines
+/// inside it are never offered for adoption so the app never fights it
+/// for ownership of `kubernetes.docker.internal`.
+const DOCKER_DESKTOP_START: &str = "# Added by Docker Desktop";
+const DOCKER_DESKTOP_END: &str = "# End of section";
 
 /// Returns the OS-specific hosts file path.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -127,6 +136,121 @@ fn parse_managed_line(raw: &str) -> Option<ParsedManagedLine> {
         hostname,
         comment,
     })
+}
+
+/// A plain hostname entry that lives outside the app-managed block —
+/// something the user (or another tool) added directly to the hosts file.
+/// `id` is the 0-based line number the entry currently occupies, which is
+/// how `remove_unmanaged_line` locates it again when adopting it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnmanagedEntry {
+    pub id: String,
+    pub ip: String,
+    pub hostname: String,
+    pub comment: String,
+}
+
+/// System-critical names that must never be offered for adoption: toggling
+/// or deleting them through the app (or losing them to a stray edit) can
+/// break loopback resolution for the whole machine.
+fn is_system_hostname(hostname: &str) -> bool {
+    hostname
+        .split_whitespace()
+        .any(|h| h.eq_ignore_ascii_case("localhost") || h.eq_ignore_ascii_case("broadcasthost"))
+}
+
+/// Parses a raw, non-managed hosts-file line into `(ip, hostname, comment)`.
+/// Unlike `parse_managed_line`, a leading `#` here means "comment", not
+/// "disabled" — the app-managed disabled-entry convention only applies
+/// inside its own block.
+fn parse_unmanaged_line(raw: &str) -> Option<(String, String, String)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    let (main, comment) = match trimmed.find('#') {
+        Some(idx) => (trimmed[..idx].trim(), trimmed[idx + 1..].trim().to_string()),
+        None => (trimmed, String::new()),
+    };
+    let mut parts = main.split_whitespace();
+    let ip = parts.next()?.to_string();
+    if !validate::is_valid_ip(&ip) {
+        return None;
+    }
+    let hostname_tokens: Vec<&str> = parts.collect();
+    if hostname_tokens.is_empty() {
+        return None;
+    }
+    Some((ip, hostname_tokens.join(" "), comment))
+}
+
+/// Finds plain hostname entries outside the app-managed block that are
+/// safe to offer for one-click adoption into it. Excludes the managed
+/// block itself (already represented by the app's own entries), system
+/// names (`localhost`/`broadcasthost`), and Docker Desktop's own section.
+pub fn list_unmanaged_entries(content: &str) -> Vec<UnmanagedEntry> {
+    let lines: Vec<&str> = content.lines().collect();
+    let managed_bounds = find_managed_block_bounds(content);
+    let mut in_docker_block = false;
+    let mut out = Vec::new();
+    for (idx, raw) in lines.iter().enumerate() {
+        if let Some((start, end)) = managed_bounds {
+            if idx >= start && idx <= end {
+                continue;
+            }
+        }
+        let trimmed = raw.trim();
+        if trimmed == DOCKER_DESKTOP_START {
+            in_docker_block = true;
+        }
+        if in_docker_block {
+            if trimmed == DOCKER_DESKTOP_END {
+                in_docker_block = false;
+            }
+            continue;
+        }
+        let Some((ip, hostname, comment)) = parse_unmanaged_line(raw) else {
+            continue;
+        };
+        if is_system_hostname(&hostname) {
+            continue;
+        }
+        out.push(UnmanagedEntry {
+            id: idx.to_string(),
+            ip,
+            hostname,
+            comment,
+        });
+    }
+    out
+}
+
+/// Removes the unmanaged line at `line_index` after verifying it still
+/// matches what was listed (guards against the file having changed since,
+/// e.g. an external edit), returning the reparsed file with that line
+/// gone. The caller then renders it back out alongside the newly adopted
+/// DB entry, so the line moves from raw text into the managed block in
+/// the same write.
+pub fn remove_unmanaged_line(
+    content: &str,
+    line_index: usize,
+    expected_ip: &str,
+    expected_hostname: &str,
+    expected_comment: &str,
+) -> Option<ParsedHostsFile> {
+    let lines: Vec<&str> = content.lines().collect();
+    let raw = *lines.get(line_index)?;
+    let (ip, hostname, comment) = parse_unmanaged_line(raw)?;
+    if ip != expected_ip || hostname != expected_hostname || comment != expected_comment {
+        return None;
+    }
+    let mut kept = lines;
+    kept.remove(line_index);
+    let mut new_content = kept.join("\n");
+    if content.ends_with('\n') && !kept.is_empty() {
+        new_content.push('\n');
+    }
+    Some(parse(&new_content))
 }
 
 /// Builds the single hosts-file line for an entry, using its active IP.
@@ -337,6 +461,103 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].hostname, "api.local admin.local");
         assert_eq!(parsed[0].comment, "note");
+    }
+
+    #[test]
+    fn lists_plain_unmanaged_entries_outside_the_managed_block() {
+        let original = format!(
+            "127.0.0.1\tlocalhost\n255.255.255.255\tbroadcasthost\n::1\tlocalhost\n127.0.0.1\tavionexus.test\n\n{}\n127.0.0.1\tmail.com\n{}\n",
+            START_MARKER, END_MARKER
+        );
+        let unmanaged = list_unmanaged_entries(&original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "avionexus.test");
+        assert_eq!(unmanaged[0].ip, "127.0.0.1");
+    }
+
+    #[test]
+    fn excludes_system_hostnames_and_docker_desktop_section() {
+        let original = "127.0.0.1\tlocalhost\n255.255.255.255\tbroadcasthost\n::1\tlocalhost\n\
+# Added by Docker Desktop\n\
+# To allow the same kube context to work on the host and the container:\n\
+127.0.0.1\tkubernetes.docker.internal\n\
+# End of section\n\
+127.0.0.1\tavionexus.test\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "avionexus.test");
+    }
+
+    #[test]
+    fn excludes_lines_that_are_not_valid_entries() {
+        let original = "## Host Database ##\n# a comment\n\n127.0.0.1\tavionexus.test\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "avionexus.test");
+    }
+
+    #[test]
+    fn parses_trailing_comment_on_unmanaged_line() {
+        let original = "::1\ttest.local # Local Site\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].ip, "::1");
+        assert_eq!(unmanaged[0].hostname, "test.local");
+        assert_eq!(unmanaged[0].comment, "Local Site");
+    }
+
+    #[test]
+    fn removes_unmanaged_line_after_verifying_it_still_matches() {
+        let original = "127.0.0.1\tlocalhost\n127.0.0.1\tavionexus.test\n10.0.0.5\tother.test\n";
+        let unmanaged = list_unmanaged_entries(original);
+        let target = unmanaged.iter().find(|u| u.hostname == "avionexus.test").unwrap();
+        let line_index: usize = target.id.parse().unwrap();
+
+        let parsed = remove_unmanaged_line(original, line_index, &target.ip, &target.hostname, &target.comment).unwrap();
+        let rendered = render(&parsed, &[]);
+        assert_eq!(rendered, "127.0.0.1\tlocalhost\n10.0.0.5\tother.test\n");
+    }
+
+    #[test]
+    fn batch_removal_highest_index_first_does_not_shift_later_indices() {
+        // Mirrors confirm_adopt_many's algorithm: resolve all target lines
+        // against the original content up front, then remove them highest
+        // line-index first, re-rendering with the *pre-adopt* managed
+        // entries between steps so the managed block's line count (and
+        // therefore every other line's absolute index) never moves.
+        let pre_adopt_entries = vec![entry("e1", "mail.com", "127.0.0.1", true, "")];
+        let original = format!(
+            "127.0.0.1\tkeep-one.test\n127.0.0.1\tadopt-a.test\n127.0.0.1\tkeep-two.test\n{}\n127.0.0.1\tmail.com\n{}\n127.0.0.1\tadopt-b.test\n127.0.0.1\tkeep-three.test\n",
+            START_MARKER, END_MARKER
+        );
+
+        let unmanaged = list_unmanaged_entries(&original);
+        let targets: Vec<_> = unmanaged.into_iter().filter(|u| u.hostname.starts_with("adopt-")).collect();
+        assert_eq!(targets.len(), 2);
+        let mut targets = targets;
+        targets.sort_by_key(|u| std::cmp::Reverse(u.id.parse::<usize>().unwrap()));
+
+        let mut content = original;
+        for t in &targets {
+            let line_index: usize = t.id.parse().unwrap();
+            let parsed = remove_unmanaged_line(&content, line_index, &t.ip, &t.hostname, &t.comment).unwrap();
+            content = render(&parsed, &pre_adopt_entries);
+        }
+
+        assert_eq!(
+            content,
+            format!(
+                "127.0.0.1\tkeep-one.test\n127.0.0.1\tkeep-two.test\n\n{}\n127.0.0.1\tmail.com\n{}\n127.0.0.1\tkeep-three.test\n",
+                START_MARKER, END_MARKER
+            )
+        );
+    }
+
+    #[test]
+    fn remove_unmanaged_line_fails_if_content_changed_since_listing() {
+        let original = "127.0.0.1\tavionexus.test\n";
+        let result = remove_unmanaged_line(original, 0, "127.0.0.1", "different.test", "");
+        assert!(result.is_none());
     }
 
     #[test]

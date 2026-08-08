@@ -1,12 +1,14 @@
 import type { ColorTokens } from "../theme";
-import type { Entry } from "../types";
+import type { Entry, UnmanagedEntry } from "../types";
 import { EntryRow, gridTemplate } from "./EntryRow";
+import { UnmanagedRow } from "./UnmanagedRow";
 import { PlusIcon, SearchIcon } from "./icons";
 
 interface ListViewProps {
   c: ColorTokens;
   entries: Entry[];
   totalEntryCount: number;
+  unmanagedEntries: UnmanagedEntry[];
   search: string;
   onSearchChange: (value: string) => void;
   onAddClick: () => void;
@@ -19,12 +21,14 @@ interface ListViewProps {
   onToggleEnabled: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
   onSwitchIp: (entryId: string, ipId: string) => void;
+  onAdopt: (id: string) => void;
 }
 
 export function ListView({
   c,
   entries,
   totalEntryCount,
+  unmanagedEntries,
   search,
   onSearchChange,
   onAddClick,
@@ -37,6 +41,7 @@ export function ListView({
   onToggleEnabled,
   onEdit,
   onSwitchIp,
+  onAdopt,
 }: ListViewProps) {
   const subtitle = groupFilter ? `${groupFilter} · ${entries.length} entries` : `${totalEntryCount} managed entries`;
 
@@ -165,6 +170,19 @@ export function ListView({
             </div>
           )}
         </div>
+
+        {unmanagedEntries.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, textTransform: "uppercase", letterSpacing: ".05em", margin: "20px 0 8px" }}>
+              Found in hosts file, not managed here
+            </div>
+            <div style={{ borderRadius: 12, border: `1px dashed ${c.border}`, overflow: "visible", background: c.cardBg }}>
+              {unmanagedEntries.map((entry) => (
+                <UnmanagedRow key={entry.id} c={c} entry={entry} disabled={disabled} onAdopt={() => onAdopt(entry.id)} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
