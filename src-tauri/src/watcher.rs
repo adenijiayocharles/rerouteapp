@@ -20,6 +20,18 @@ pub fn start_watching(
     hosts_path: PathBuf,
     last_written: LastWrittenContent,
 ) -> notify::Result<RecommendedWatcher> {
+    // What the watcher itself last observed on disk, seeded with the
+    // current content so a notification that doesn't represent an actual
+    // change (a spurious/coalesced FSEvents notification, or one that
+    // fires while a pending write is still in flight — see
+    // `write_content_to_hosts_file`'s comment on priming `last_written`
+    // before a possibly slow/elevation-prompt-blocked write) is recognized
+    // as a no-op rather than compared against the *pending* write's
+    // content, which is what it landing would look like, not what "no
+    // change yet" looks like.
+    let last_observed: Arc<Mutex<Option<String>>> =
+        Arc::new(Mutex::new(std::fs::read_to_string(&hosts_path).ok()));
+
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         let Ok(event) = res else { return };
         if !event.kind.is_modify() && !event.kind.is_create() {
@@ -28,9 +40,24 @@ pub fn start_watching(
         let Ok(current) = std::fs::read_to_string(&hosts_path) else {
             return;
         };
+
+        {
+            let mut seen = last_observed.lock().unwrap();
+            if seen.as_deref() == Some(current.as_str()) {
+                // Nothing actually changed since we last looked; don't
+                // treat this as either our own write landing or an
+                // external edit.
+                return;
+            }
+            *seen = Some(current.clone());
+        }
+
         let mut guard = last_written.lock().unwrap();
         if guard.as_deref() == Some(current.as_str()) {
-            // This is our own write settling; ignore it.
+            // This is our own write settling; ignore it, and clear the
+            // guard so a later external write that happens to reproduce
+            // these exact bytes isn't also mistaken for us.
+            *guard = None;
             return;
         }
         *guard = None;

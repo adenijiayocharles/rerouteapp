@@ -1,0 +1,43 @@
+//! Privileged helper daemon lifecycle: status, uninstall, and the Settings
+//! page toggle controlling whether the app is allowed to auto-install it.
+
+use tauri::State;
+
+use crate::elevate;
+use crate::helper_client;
+use crate::state::AppState;
+use crate::store;
+
+/// Whether the privileged helper daemon is currently installed and
+/// reachable (drives the sidebar's helper-status indicator).
+#[tauri::command]
+pub fn helper_status() -> bool {
+    helper_client::ping()
+}
+
+/// Removes the helper daemon (one elevated prompt): stops it via launchd
+/// and deletes its binary and LaunchDaemon plist. Subsequent writes fall
+/// back to per-write elevation until it's reinstalled.
+#[tauri::command]
+pub fn uninstall_helper(state: State<AppState>) -> Result<(), String> {
+    let cmd = elevate::build_uninstall_command();
+    state.executor.run_privileged_shell(&cmd).map(|_| ())
+}
+
+/// Whether the app is allowed to auto-install the background helper on
+/// the next write (Settings page toggle; on by default).
+#[tauri::command]
+pub fn get_helper_enabled(state: State<AppState>) -> bool {
+    state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Persists the Settings page toggle. Does not itself install or remove
+/// the helper daemon — the frontend calls `uninstall_helper` separately
+/// when turning this off while the helper is currently active.
+#[tauri::command]
+pub fn set_helper_enabled(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    store::set_setting(&conn, "helper_enabled", if enabled { "true" } else { "false" }).map_err(|e| e.to_string())?;
+    state.helper_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}

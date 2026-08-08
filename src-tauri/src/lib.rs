@@ -35,6 +35,7 @@ pub fn run() {
             let db_path = app_data_dir.join("hosts-manager.sqlite3");
             let conn = Connection::open(&db_path)?;
             store::init_db(&conn)?;
+            let read_conn = Connection::open(&db_path)?;
 
             // First-run import: if the DB has no entries yet but the
             // hosts file already has an app-managed block (e.g. a prior
@@ -51,7 +52,7 @@ pub fn run() {
                 .map(|v| v != "false")
                 .unwrap_or(true);
 
-            let app_state = AppState::new(app_data_dir, conn, helper_enabled);
+            let app_state = AppState::new(app_data_dir, conn, read_conn, helper_enabled);
             let last_written = app_state.last_written.clone();
             let hosts_path = app_state.hosts_path.clone();
             app.manage(app_state);
@@ -64,33 +65,33 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::list_entries,
-            commands::get_history,
-            commands::is_shadow_domain,
-            commands::preview_save,
-            commands::confirm_save,
-            commands::switch_active_ip,
-            commands::toggle_enabled,
-            commands::history_diff,
-            commands::preview_restore,
-            commands::confirm_restore,
-            commands::preview_delete,
-            commands::confirm_delete,
-            commands::list_unmanaged_entries,
-            commands::preview_adopt,
-            commands::confirm_adopt,
-            commands::confirm_adopt_many,
-            commands::read_hosts_file,
-            commands::preview_raw_save,
-            commands::lint_hosts_content,
-            commands::confirm_raw_save,
-            commands::flush_dns,
-            commands::helper_status,
-            commands::uninstall_helper,
-            commands::get_helper_enabled,
-            commands::set_helper_enabled,
-            commands::get_setting,
-            commands::set_setting,
+            commands::entries::list_entries,
+            commands::entries::get_history,
+            commands::entries::is_shadow_domain,
+            commands::entries::preview_save,
+            commands::entries::confirm_save,
+            commands::entries::switch_active_ip,
+            commands::entries::toggle_enabled,
+            commands::entries::history_diff,
+            commands::entries::preview_restore,
+            commands::entries::confirm_restore,
+            commands::entries::preview_delete,
+            commands::entries::confirm_delete,
+            commands::adopt::list_unmanaged_entries,
+            commands::adopt::preview_adopt,
+            commands::adopt::confirm_adopt,
+            commands::adopt::confirm_adopt_many,
+            commands::raw_save::read_hosts_file,
+            commands::raw_save::preview_raw_save,
+            commands::raw_save::lint_hosts_content,
+            commands::raw_save::confirm_raw_save,
+            commands::dns::flush_dns,
+            commands::helper::helper_status,
+            commands::helper::uninstall_helper,
+            commands::helper::get_helper_enabled,
+            commands::helper::set_helper_enabled,
+            commands::settings::get_setting,
+            commands::settings::set_setting,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

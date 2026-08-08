@@ -123,10 +123,13 @@ fn parse_managed_line(raw: &str) -> Option<ParsedManagedLine> {
     };
     let mut parts = main.split_whitespace();
     let ip = parts.next()?.to_string();
+    if !validate::is_valid_ip(&ip) {
+        return None;
+    }
     // A line can list multiple hostnames for the same IP (standard hosts
     // file syntax); keep them all, space-joined, rather than just the first.
     let hostname_tokens: Vec<&str> = parts.collect();
-    if hostname_tokens.is_empty() {
+    if hostname_tokens.is_empty() || hostname_tokens.iter().any(|h| !validate::is_valid_hostname(h)) {
         return None;
     }
     let hostname = hostname_tokens.join(" ");
@@ -152,11 +155,14 @@ pub struct UnmanagedEntry {
 
 /// System-critical names that must never be offered for adoption: toggling
 /// or deleting them through the app (or losing them to a stray edit) can
-/// break loopback resolution for the whole machine.
+/// break loopback resolution for the whole machine. Shares the same list
+/// `validate::is_shadow_domain` warns about on the structured save path
+/// (localhost, broadcasthost, and their IPv6/alias forms), so a name that's
+/// dangerous to touch is never silently offered here either.
 fn is_system_hostname(hostname: &str) -> bool {
     hostname
         .split_whitespace()
-        .any(|h| h.eq_ignore_ascii_case("localhost") || h.eq_ignore_ascii_case("broadcasthost"))
+        .any(validate::is_shadow_domain)
 }
 
 /// Parses a raw, non-managed hosts-file line into `(ip, hostname, comment)`.
@@ -178,7 +184,7 @@ fn parse_unmanaged_line(raw: &str) -> Option<(String, String, String)> {
         return None;
     }
     let hostname_tokens: Vec<&str> = parts.collect();
-    if hostname_tokens.is_empty() {
+    if hostname_tokens.is_empty() || hostname_tokens.iter().any(|h| !validate::is_valid_hostname(h)) {
         return None;
     }
     Some((ip, hostname_tokens.join(" "), comment))
@@ -489,11 +495,38 @@ mod tests {
     }
 
     #[test]
+    fn excludes_all_known_shadow_domains_not_just_localhost_and_broadcasthost() {
+        let original = "::1\tip6-localhost\n::1\tip6-loopback\nff02::1\tip6-allnodes\nff02::2\tip6-allrouters\n127.0.0.1\tlocalhost.localdomain\n127.0.0.1\tavionexus.test\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "avionexus.test");
+    }
+
+    #[test]
     fn excludes_lines_that_are_not_valid_entries() {
         let original = "## Host Database ##\n# a comment\n\n127.0.0.1\tavionexus.test\n";
         let unmanaged = list_unmanaged_entries(original);
         assert_eq!(unmanaged.len(), 1);
         assert_eq!(unmanaged[0].hostname, "avionexus.test");
+    }
+
+    #[test]
+    fn excludes_unmanaged_lines_with_an_invalid_hostname() {
+        let original = "127.0.0.1\thas_underscore.svc\n127.0.0.1\tavionexus.test\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "avionexus.test");
+    }
+
+    #[test]
+    fn managed_block_import_rejects_invalid_ip_or_hostname() {
+        let original = format!(
+            "{}\n127.0.0.1\tgood.local\n999.1.1.1\tbad-ip.local\n127.0.0.1\thas_underscore.svc\n{}\n",
+            START_MARKER, END_MARKER
+        );
+        let parsed = parse_managed_block(&original);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].hostname, "good.local");
     }
 
     #[test]

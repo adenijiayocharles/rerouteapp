@@ -9,6 +9,14 @@ use crate::watcher::LastWrittenContent;
 
 pub struct AppState {
     pub conn: Mutex<Connection>,
+    /// A second connection used by read-only commands (list/history/get_setting/
+    /// preview_*). Write commands hold `conn`'s lock for their whole duration,
+    /// including a potentially long-blocking elevation prompt (see
+    /// `write_content_to_hosts_file`) — without a separate connection, every
+    /// read-only command would hang for as long as that prompt is open.
+    /// SQLite permits concurrent readers while a writer's transaction is open
+    /// but not yet committed, so this is safe under the default journal mode.
+    pub read_conn: Mutex<Connection>,
     pub hosts_path: PathBuf,
     pub backups_dir: PathBuf,
     pub last_written: LastWrittenContent,
@@ -25,11 +33,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(app_data_dir: PathBuf, conn: Connection, helper_enabled: bool) -> Self {
+    pub fn new(app_data_dir: PathBuf, conn: Connection, read_conn: Connection, helper_enabled: bool) -> Self {
         let backups_dir = app_data_dir.join("backups");
         std::fs::create_dir_all(&backups_dir).ok();
         Self {
             conn: Mutex::new(conn),
+            read_conn: Mutex::new(read_conn),
             hosts_path: crate::hosts_parser::hosts_file_path(),
             backups_dir,
             last_written: Default::default(),
