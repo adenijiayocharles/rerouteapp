@@ -39,3 +39,13 @@ mkdir -p "target/$profile_dir"
 if [ "$built" != "$dest" ]; then
   cp "$built" "$dest"
 fi
+
+# tauri.conf.json's `bundle.resources` always points at the release path,
+# and tauri-build validates that the resource exists even for dev builds.
+# Keep a copy there during dev so `tauri dev` (debug profile) doesn't fail;
+# it's unused at runtime since `locate_helper_binary` finds the debug
+# binary next to the running executable first.
+if [ "$profile_dir" != "release" ]; then
+  mkdir -p target/release
+  cp "$dest" target/release/hosts-manager-helper
+fi
