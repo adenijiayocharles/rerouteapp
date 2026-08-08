@@ -484,7 +484,7 @@ export default function App() {
         refreshHelperStatus().catch(() => {});
         dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Restored", message: "Previous version has been written to the hosts file." } });
       } else if (diff.mode === "delete" && pendingDeleteId) {
-        const hostname = state.editingDraft?.hostname ?? "Entry";
+        const hostname = diff.historyBefore?.hostname ?? "The entry";
         await api.confirmDelete(pendingDeleteId);
         dispatch({ type: "REMOVE_ENTRY", id: pendingDeleteId });
         dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });

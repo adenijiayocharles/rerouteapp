@@ -523,7 +523,7 @@ pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPr
         after_line: None,
         is_shadow_domain: false,
         restore_target_id: None,
-        history_before: None,
+        history_before: Some(entry),
         history_after: None,
     })
 }

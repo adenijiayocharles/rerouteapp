@@ -231,6 +231,7 @@ pub fn update_entry(conn: &Connection, id: &str, draft: &EntryDraft) -> rusqlite
 }
 
 pub fn delete_entry(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM ip_candidates WHERE entry_id = ?1", params![id])?;
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -438,6 +439,7 @@ pub fn prune_history(conn: &Connection, keep: Option<i64>) -> rusqlite::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::IpDraft;
 
     fn setup() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -484,5 +486,27 @@ mod tests {
         prune_history(&conn, None).unwrap();
 
         assert_eq!(list_history(&conn).unwrap().len(), 5);
+    }
+
+    #[test]
+    fn delete_entry_removes_its_ip_candidates() {
+        let conn = setup();
+        let draft = EntryDraft {
+            id: None,
+            hostname: "api.test".to_string(),
+            comment: String::new(),
+            group: String::new(),
+            enabled: true,
+            active_uid: "ip1".to_string(),
+            ips: vec![IpDraft { uid: "ip1".to_string(), label: "primary".to_string(), ip: "127.0.0.1".to_string() }],
+        };
+        let entry = insert_entry(&conn, &draft).unwrap();
+
+        delete_entry(&conn, &entry.id).unwrap();
+
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ip_candidates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 }
