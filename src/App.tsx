@@ -70,7 +70,6 @@ type Action =
   | { type: "SET_HISTORY_RETENTION"; value: HistoryRetention }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
-  | { type: "TOGGLE_THEME" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
   | { type: "GO_RAW" }
@@ -161,11 +160,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
       return { ...state, settingsOpen: false };
-    case "TOGGLE_THEME": {
-      const resolved: Theme =
-        state.themePreference === "system" ? (state.systemPrefersDark ? "dark" : "light") : state.themePreference;
-      return { ...state, themePreference: resolved === "light" ? "dark" : "light" };
-    }
     case "SET_THEME_PREFERENCE":
       return { ...state, themePreference: action.preference };
     case "SET_SYSTEM_PREFERS_DARK":
@@ -654,8 +648,6 @@ export default function App() {
     >
       <TitleBar
         c={c}
-        theme={theme}
-        onToggleTheme={() => dispatch({ type: "TOGGLE_THEME" })}
         trayOpen={state.trayOpen}
         onToggleTray={() => dispatch({ type: "TOGGLE_TRAY" })}
         onCloseTray={() => dispatch({ type: "CLOSE_TRAY" })}
@@ -720,6 +712,7 @@ export default function App() {
       {state.editingDraft && (
         <DraftPanel
           c={c}
+          theme={theme}
           draft={state.editingDraft}
           onClose={() => dispatch({ type: "CLOSE_DRAFT" })}
           onFieldChange={(field, value) => dispatch({ type: "UPDATE_DRAFT_FIELD", field, value })}

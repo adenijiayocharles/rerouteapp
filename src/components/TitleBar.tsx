@@ -1,14 +1,12 @@
 import { useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { ColorTokens, Theme } from "../theme";
+import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
-import { GearIcon, MoonIcon, SunIcon, TrayIcon } from "./icons";
+import { GearIcon, TrayIcon } from "./icons";
 import { QuickSwitchTray } from "./QuickSwitchTray";
 
 interface TitleBarProps {
   c: ColorTokens;
-  theme: Theme;
-  onToggleTheme: () => void;
   trayOpen: boolean;
   onToggleTray: () => void;
   onCloseTray: () => void;
@@ -84,8 +82,6 @@ function TrafficLight({
 
 export function TitleBar({
   c,
-  theme,
-  onToggleTheme,
   trayOpen,
   onToggleTray,
   onCloseTray,
@@ -94,7 +90,6 @@ export function TitleBar({
   onFlushDns,
   onOpenSettings,
 }: TitleBarProps) {
-  const isDark = theme === "dark";
   return (
     <div
       data-tauri-drag-region
@@ -143,15 +138,6 @@ export function TitleBar({
           <QuickSwitchTray c={c} entries={entries} onSwitchIp={onSwitchIp} onClose={onCloseTray} />
         )}
       </div>
-      <button
-        onClick={onToggleTheme}
-        title="Toggle theme"
-        style={titleBarButtonStyle(c)}
-        onMouseEnter={(e) => (e.currentTarget.style.background = c.rowHover)}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      >
-        {isDark ? <SunIcon color={c.textMuted} /> : <MoonIcon color={c.textMuted} />}
-      </button>
       <button
         onClick={onOpenSettings}
         title="Settings"

@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { ColorTokens } from "../theme";
+import type { ColorTokens, Theme } from "../theme";
 import type { EntryDraft } from "../types";
 import { CloseIcon, PlusIcon, TrashIcon, CheckIcon } from "./icons";
 
 interface DraftPanelProps {
   c: ColorTokens;
+  theme: Theme;
   draft: EntryDraft;
   onClose: () => void;
   onFieldChange: <K extends "hostname" | "comment" | "group">(field: K, value: string) => void;
@@ -19,6 +20,7 @@ interface DraftPanelProps {
 
 export function DraftPanel({
   c,
+  theme,
   draft,
   onClose,
   onFieldChange,
@@ -53,7 +55,7 @@ export function DraftPanel({
           right: 0,
           bottom: 0,
           width: 440,
-          background: c.bg,
+          background: c.chipBg,
           borderLeft: `1px solid ${c.border}`,
           boxShadow: c.popShadow,
           zIndex: 51,
@@ -65,7 +67,7 @@ export function DraftPanel({
       >
         <div
           style={{
-            padding: "20px 24px",
+            padding: "11px 24px",
             borderBottom: `1px solid ${c.border}`,
             display: "flex",
             alignItems: "center",
@@ -94,21 +96,21 @@ export function DraftPanel({
         </div>
 
         <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 18, flex: 1 }}>
-          <Field label="Hostname" c={c}>
+          <Field label="Hostname" c={c} theme={theme}>
             <input
               value={draft.hostname}
               onChange={(e) => onFieldChange("hostname", e.target.value)}
               placeholder="api.myapp.local, admin.myapp.local"
-              style={inputStyle(c, true)}
+              style={inputStyle(c, theme, true)}
             />
-            <div style={{ fontSize: 11.5, color: c.textFaint, marginTop: 6 }}>
+            <div style={{ fontSize: 11.5, color: theme === "light" ? c.textMuted : c.textFaint, marginTop: 6 }}>
               Separate multiple hostnames with commas or spaces to point them all at the same IP.
             </div>
           </Field>
 
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <label style={labelStyle(c)}>IP addresses</label>
+              <label style={labelStyle(c, theme)}>IP addresses</label>
               <button
                 onClick={onAddIpRow}
                 style={{
@@ -117,6 +119,7 @@ export function DraftPanel({
                   color: c.accent,
                   background: "transparent",
                   border: "none",
+                  textTransform: "uppercase",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
@@ -165,13 +168,13 @@ export function DraftPanel({
                       value={row.label}
                       onChange={(e) => onIpFieldChange(row.uid, "label", e.target.value)}
                       placeholder="Label"
-                      style={{ ...inputStyle(c, false), width: 76, height: 28, fontSize: 12 }}
+                      style={{ ...inputStyle(c, theme, false), width: 76, height: 28, fontSize: 12 }}
                     />
                     <input
                       value={row.ip}
                       onChange={(e) => onIpFieldChange(row.uid, "ip", e.target.value)}
                       placeholder="127.0.0.1"
-                      style={{ ...inputStyle(c, true), flex: 1, height: 28, fontSize: 12.5, minWidth: 0 }}
+                      style={{ ...inputStyle(c, theme, true), flex: 1, height: 28, fontSize: 12.5, minWidth: 0 }}
                     />
                     <button
                       onClick={() => onRemoveIpRow(row.uid)}
@@ -202,28 +205,28 @@ export function DraftPanel({
           <div style={{ display: "flex", gap: 12 }}>
             {!isNew && (
               <div style={{ flex: 1 }}>
-                <label style={labelStyle(c)}>Comment</label>
+                <label style={labelStyle(c, theme)}>Comment</label>
                 <input
                   value={draft.comment}
                   onChange={(e) => onFieldChange("comment", e.target.value)}
                   placeholder="Optional note"
-                  style={{ ...inputStyle(c, false), marginTop: 6 }}
+                  style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
                 />
               </div>
             )}
             <div style={{ flex: 1 }}>
-              <label style={labelStyle(c)}>Group</label>
+              <label style={labelStyle(c, theme)}>Group</label>
               <input
                 value={draft.group}
                 onChange={(e) => onFieldChange("group", e.target.value)}
                 placeholder="e.g. Work"
-                style={{ ...inputStyle(c, false), marginTop: 6 }}
+                style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
               />
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>Enabled</div>
+            <div style={labelStyle(c, theme)}>ENABLED</div>
             <button
               onClick={onToggleEnabled}
               style={{
@@ -260,9 +263,10 @@ export function DraftPanel({
                 height: 38,
                 padding: "0 16px",
                 borderRadius: 8,
-                border: `1px solid ${c.red}`,
-                background: "transparent",
-                color: c.red,
+                border: "none",
+                background: "#b91c1c",
+                textTransform: "uppercase",
+                color: "#fff",
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: "pointer",
@@ -281,6 +285,7 @@ export function DraftPanel({
               border: `1px solid ${c.border}`,
               background: "transparent",
               color: c.text,
+              textTransform: "uppercase",
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
@@ -293,6 +298,7 @@ export function DraftPanel({
             style={{
               width: 140,
               height: 38,
+              textTransform: "uppercase",
               borderRadius: 8,
               border: "none",
               background: c.accent,
@@ -310,32 +316,32 @@ export function DraftPanel({
   );
 }
 
-function Field({ label, c, children }: { label: string; c: ColorTokens; children: ReactNode }) {
+function Field({ label, c, theme, children }: { label: string; c: ColorTokens; theme: Theme; children: ReactNode }) {
   return (
     <div>
-      <label style={labelStyle(c)}>{label}</label>
+      <label style={labelStyle(c, theme)}>{label}</label>
       <div style={{ marginTop: 6 }}>{children}</div>
     </div>
   );
 }
 
-function labelStyle(c: ColorTokens): CSSProperties {
+function labelStyle(c: ColorTokens, theme: Theme): CSSProperties {
   return {
     fontSize: 11.5,
     fontWeight: 700,
-    color: c.textFaint,
+    color: theme === "light" ? c.textMuted : c.textFaint,
     textTransform: "uppercase",
     letterSpacing: ".04em",
   };
 }
 
-function inputStyle(c: ColorTokens, mono: boolean): CSSProperties {
+function inputStyle(c: ColorTokens, theme: Theme, mono: boolean): CSSProperties {
   return {
     width: "100%",
     height: 36,
     padding: "0 12px",
     borderRadius: 8,
-    border: `1px solid ${c.border}`,
+    border: theme === "light" ? "1px solid rgba(15,15,20,0.18)" : `1px solid ${c.border}`,
     background: c.inputBg,
     color: c.text,
     fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit",
