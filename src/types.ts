@@ -40,7 +40,18 @@ export interface EntryDraft {
   ips: IpDraft[];
 }
 
-export type DiffMode = "save" | "restore" | "view" | "delete";
+export interface DiffLine {
+  kind: "same" | "added" | "removed";
+  text: string;
+}
+
+export interface LintDiagnostic {
+  line: number;
+  severity: "error" | "warning";
+  message: string;
+}
+
+export type DiffMode = "save" | "restore" | "view" | "delete" | "raw";
 
 export interface DiffPreview {
   mode: DiffMode;
@@ -54,6 +65,8 @@ export interface DiffPreview {
   restoreTargetId: string | null;
   historyBefore: Entry | null;
   historyAfter: Entry | null;
+  diffLines: DiffLine[] | null;
+  diagnostics: LintDiagnostic[] | null;
 }
 
 export interface WriteResult {
