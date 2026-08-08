@@ -40,7 +40,7 @@ export interface EntryDraft {
   ips: IpDraft[];
 }
 
-export type DiffMode = "save" | "restore" | "view";
+export type DiffMode = "save" | "restore" | "view" | "delete";
 
 export interface DiffPreview {
   mode: DiffMode;

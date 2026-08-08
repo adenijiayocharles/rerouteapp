@@ -18,6 +18,9 @@ export const api = {
   previewRestore: (historyId: string) => invoke<DiffPreview>("preview_restore", { historyId }),
   confirmRestore: (historyId: string) => invoke<WriteResult>("confirm_restore", { historyId }),
 
+  previewDelete: (entryId: string) => invoke<DiffPreview>("preview_delete", { entryId }),
+  confirmDelete: (entryId: string) => invoke<WriteResult>("confirm_delete", { entryId }),
+
   flushDns: () => invoke<WriteResult>("flush_dns"),
 
   helperStatus: () => invoke<boolean>("helper_status"),
