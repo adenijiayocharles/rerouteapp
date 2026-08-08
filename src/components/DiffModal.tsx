@@ -15,8 +15,10 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
 
   const cancelLabel = diff.mode === "view" ? "Close" : "Cancel";
   const showConfirm = diff.mode !== "view";
-  const confirmLabel = diff.mode === "restore" ? "Restore version" : diff.mode === "delete" ? "Delete entry" : "Write to hosts file";
+  const confirmLabel =
+    diff.mode === "restore" ? "Restore version" : diff.mode === "delete" ? "Delete entry" : diff.mode === "raw" ? "Save file" : "Write to hosts file";
   const confirmDisabled = diff.isShadowDomain && diff.mode === "save" && !shadowAck;
+  const modalWidth = diff.mode === "raw" ? 640 : 560;
 
   return (
     <>
@@ -30,7 +32,7 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
           top: "50%",
           left: "50%",
           transform: "translate(-50%,-50%)",
-          width: 560,
+          width: modalWidth,
           background: c.cardBg,
           borderRadius: 14,
           boxShadow: c.popShadow,
@@ -78,37 +80,105 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
           </div>
         )}
 
-        <div style={{ padding: "16px 24px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, textTransform: "uppercase", letterSpacing: ".04em" }}>
-            hosts file
-          </div>
-          <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${c.border}`, fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5 }}>
-            <div style={{ padding: "9px 6px 9px 8px", color: c.textFaint }}>…</div>
-            {diff.beforeLine && (
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  padding: "9px 6px 9px 8px",
-                  background: c.redSoft,
-                  color: c.red,
-                  textDecoration: "line-through",
-                  textDecorationColor: c.red,
-                }}
-              >
-                <span style={{ flex: "none", fontWeight: 700 }}>−</span>
-                <span style={{ whiteSpace: "pre" }}>{diff.beforeLine}</span>
+        {diff.mode === "raw" && diff.diagnostics && diff.diagnostics.length > 0 && (
+          <div style={{ padding: "12px 24px 0" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: diff.diagnostics.some((d) => d.severity === "error") ? c.redSoft : c.accentSoft,
+                border: `1px solid ${diff.diagnostics.some((d) => d.severity === "error") ? c.red : c.accent}`,
+              }}
+            >
+              <WarningIcon size={16} color={diff.diagnostics.some((d) => d.severity === "error") ? c.red : c.accent} />
+              <div style={{ fontSize: 12.5, color: c.text, lineHeight: 1.5 }}>
+                <strong>
+                  {diff.diagnostics.filter((d) => d.severity === "error").length} error(s),{" "}
+                  {diff.diagnostics.filter((d) => d.severity === "warning").length} warning(s)
+                </strong>{" "}
+                in the managed block. You can still save — review the lines below.
               </div>
-            )}
-            {diff.afterLine && (
-              <div style={{ display: "flex", gap: 8, padding: "9px 6px 9px 8px", background: c.greenSoft, color: c.green }}>
-                <span style={{ flex: "none", fontWeight: 700 }}>+</span>
-                <span style={{ whiteSpace: "pre" }}>{diff.afterLine}</span>
-              </div>
-            )}
-            <div style={{ padding: "9px 6px 9px 8px", color: c.textFaint }}>…</div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {diff.mode !== "raw" && (
+          <div style={{ padding: "16px 24px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              hosts file
+            </div>
+            <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${c.border}`, fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5 }}>
+              <div style={{ padding: "9px 6px 9px 8px", color: c.textFaint }}>…</div>
+              {diff.beforeLine && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    padding: "9px 6px 9px 8px",
+                    background: c.redSoft,
+                    color: c.red,
+                    textDecoration: "line-through",
+                    textDecorationColor: c.red,
+                  }}
+                >
+                  <span style={{ flex: "none", fontWeight: 700 }}>−</span>
+                  <span style={{ whiteSpace: "pre" }}>{diff.beforeLine}</span>
+                </div>
+              )}
+              {diff.afterLine && (
+                <div style={{ display: "flex", gap: 8, padding: "9px 6px 9px 8px", background: c.greenSoft, color: c.green }}>
+                  <span style={{ flex: "none", fontWeight: 700 }}>+</span>
+                  <span style={{ whiteSpace: "pre" }}>{diff.afterLine}</span>
+                </div>
+              )}
+              <div style={{ padding: "9px 6px 9px 8px", color: c.textFaint }}>…</div>
+            </div>
+          </div>
+        )}
+
+        {diff.mode === "raw" && diff.diffLines && (
+          <div style={{ padding: "16px 24px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              hosts file
+            </div>
+            <div
+              style={{
+                borderRadius: 10,
+                overflow: "auto",
+                maxHeight: 320,
+                border: `1px solid ${c.border}`,
+                fontFamily: "'JetBrains Mono',monospace",
+                fontSize: 12.5,
+              }}
+            >
+              {diff.diffLines.length === 0 ? (
+                <div style={{ padding: "9px 6px 9px 8px", color: c.textFaint }}>No changes.</div>
+              ) : (
+                diff.diffLines.map((line, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      padding: "5px 6px 5px 8px",
+                      background: line.kind === "added" ? c.greenSoft : line.kind === "removed" ? c.redSoft : "transparent",
+                      color: line.kind === "added" ? c.green : line.kind === "removed" ? c.red : c.textFaint,
+                      textDecoration: line.kind === "removed" ? "line-through" : "none",
+                      textDecorationColor: c.red,
+                    }}
+                  >
+                    <span style={{ flex: "none", fontWeight: 700, width: 10 }}>
+                      {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : ""}
+                    </span>
+                    <span style={{ whiteSpace: "pre" }}>{line.text}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         <div style={{ padding: "16px 24px 20px", display: "flex", gap: 10 }}>
           <button
