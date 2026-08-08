@@ -1,4 +1,5 @@
 mod commands;
+mod diff;
 mod dns_flush;
 mod elevate;
 mod helper_client;
