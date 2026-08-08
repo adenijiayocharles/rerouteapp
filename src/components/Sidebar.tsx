@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ColorTokens } from "../theme";
-import { HistoryIcon, ListIcon } from "./icons";
+import { FileIcon, HistoryIcon, ListIcon } from "./icons";
 
 export interface GroupSummary {
   name: string;
@@ -9,9 +9,10 @@ export interface GroupSummary {
 
 interface SidebarProps {
   c: ColorTokens;
-  view: "list" | "history";
+  view: "list" | "history" | "raw";
   onGoList: () => void;
   onGoHistory: () => void;
+  onGoRaw: () => void;
   entryCount: number;
   groups: GroupSummary[];
   groupFilter: string | null;
@@ -23,6 +24,7 @@ export function Sidebar({
   view,
   onGoList,
   onGoHistory,
+  onGoRaw,
   entryCount,
   groups,
   groupFilter,
@@ -58,6 +60,13 @@ export function Sidebar({
         onClick={onGoHistory}
         icon={<HistoryIcon color={view === "history" ? c.accent : c.textMuted} />}
         label="History"
+      />
+      <NavButton
+        c={c}
+        active={view === "raw"}
+        onClick={onGoRaw}
+        icon={<FileIcon color={view === "raw" ? c.accent : c.textMuted} />}
+        label="Raw File"
       />
 
       {groups.length > 0 && (
