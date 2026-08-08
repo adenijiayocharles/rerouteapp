@@ -36,9 +36,13 @@ export function RawEditorView({ c, content, baseline, disabled, onChange, onRequ
   const onRequestSaveRef = useRef(onRequestSave);
   const themeCompartment = useRef(new Compartment());
   const highlightCompartment = useRef(new Compartment());
+  const canSaveRef = useRef(false);
+
+  const dirty = content !== baseline;
 
   onChangeRef.current = onChange;
   onRequestSaveRef.current = onRequestSave;
+  canSaveRef.current = dirty && !disabled;
 
   useEffect(() => {
     const view = new EditorView({
@@ -52,6 +56,7 @@ export function RawEditorView({ c, content, baseline, disabled, onChange, onRequ
             key: "Mod-s",
             preventDefault: true,
             run: (v) => {
+              if (!canSaveRef.current) return true;
               onRequestSaveRef.current(v.state.doc.toString());
               return true;
             },
@@ -111,8 +116,6 @@ export function RawEditorView({ c, content, baseline, disabled, onChange, onRequ
       lastEmitted.current = content;
     }
   }, [content]);
-
-  const dirty = content !== baseline;
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: c.bg }}>

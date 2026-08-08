@@ -675,7 +675,10 @@ export default function App() {
           view={state.view}
           onGoList={() => dispatch({ type: "GO_LIST" })}
           onGoHistory={() => dispatch({ type: "GO_HISTORY" })}
-          onGoRaw={() => dispatch({ type: "GO_RAW" })}
+          onGoRaw={() => {
+            dispatch({ type: "GO_RAW" });
+            refreshRawFile().catch(() => {});
+          }}
           entryCount={state.entries.length}
           groups={groups}
           groupFilter={state.groupFilter}

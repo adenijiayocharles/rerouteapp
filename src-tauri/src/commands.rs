@@ -638,12 +638,25 @@ fn plan_reconciliation(
     parsed_lines: &[hosts_parser::ParsedManagedLine],
 ) -> Result<Vec<ReconcileChange>, String> {
     let existing = store::list_entries(tx).map_err(|e| e.to_string())?;
-    let mut existing_by_hostname: std::collections::HashMap<String, Entry> =
-        existing.into_iter().map(|e| (e.hostname.clone(), e)).collect();
+    let mut existing_by_hostname: std::collections::HashMap<String, Vec<Entry>> =
+        std::collections::HashMap::new();
+    for e in existing {
+        existing_by_hostname.entry(e.hostname.clone()).or_default().push(e);
+    }
     let mut changes = Vec::new();
 
     for line in parsed_lines {
-        if let Some(existing_entry) = existing_by_hostname.remove(&line.hostname) {
+        let matched_entry = match existing_by_hostname.entry(line.hostname.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut occ) => {
+                let popped = occ.get_mut().pop();
+                if occ.get().is_empty() {
+                    occ.remove();
+                }
+                popped
+            }
+            std::collections::hash_map::Entry::Vacant(_) => None,
+        };
+        if let Some(existing_entry) = matched_entry {
             let active_ip = existing_entry
                 .ips
                 .iter()
@@ -690,9 +703,11 @@ fn plan_reconciliation(
         }
     }
 
-    for (_, orphaned) in existing_by_hostname {
-        store::delete_entry(tx, &orphaned.id).map_err(|e| e.to_string())?;
-        changes.push(ReconcileChange::Deleted { before: orphaned });
+    for (_, orphaned_list) in existing_by_hostname {
+        for orphaned in orphaned_list {
+            store::delete_entry(tx, &orphaned.id).map_err(|e| e.to_string())?;
+            changes.push(ReconcileChange::Deleted { before: orphaned });
+        }
     }
 
     Ok(changes)
