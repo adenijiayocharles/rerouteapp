@@ -14,6 +14,7 @@ interface DraftPanelProps {
   onSetActive: (uid: string) => void;
   onToggleEnabled: () => void;
   onSave: () => void;
+  onDelete: () => void;
 }
 
 export function DraftPanel({
@@ -27,6 +28,7 @@ export function DraftPanel({
   onSetActive,
   onToggleEnabled,
   onSave,
+  onDelete,
 }: DraftPanelProps) {
   const isNew = draft.id === null;
   const title = isNew ? "Add entry" : "Edit entry";
@@ -251,10 +253,29 @@ export function DraftPanel({
           </div>
         </div>
         <div style={{ padding: "16px 24px", borderTop: `1px solid ${c.border}`, display: "flex", gap: 10, flex: "none" }}>
+          {!isNew && (
+            <button
+              onClick={onDelete}
+              style={{
+                height: 38,
+                padding: "0 16px",
+                borderRadius: 8,
+                border: `1px solid ${c.red}`,
+                background: "transparent",
+                color: c.red,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Delete
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
           <button
             onClick={onClose}
             style={{
-              flex: 1,
+              width: 100,
               height: 38,
               borderRadius: 8,
               border: `1px solid ${c.border}`,
@@ -270,7 +291,7 @@ export function DraftPanel({
           <button
             onClick={onSave}
             style={{
-              flex: 1,
+              width: 140,
               height: 38,
               borderRadius: 8,
               border: "none",
