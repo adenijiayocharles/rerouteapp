@@ -158,10 +158,10 @@ export function ListView({
               isDropdownOpen={openIpMenuId === entry.id}
               isFlushing={flushingId === entry.id}
               disabled={disabled}
-              onToggleDropdown={() => onToggleDropdown(entry.id)}
-              onToggleEnabled={() => onToggleEnabled(entry.id)}
-              onEdit={() => onEdit(entry)}
-              onSwitchIp={(ipId) => onSwitchIp(entry.id, ipId)}
+              onToggleDropdown={onToggleDropdown}
+              onToggleEnabled={onToggleEnabled}
+              onEdit={onEdit}
+              onSwitchIp={onSwitchIp}
             />
           ))}
           {entries.length === 0 && (
@@ -178,7 +178,7 @@ export function ListView({
             </div>
             <div style={{ borderRadius: 12, border: `1px dashed ${c.border}`, overflow: "visible", background: c.cardBg }}>
               {unmanagedEntries.map((entry) => (
-                <UnmanagedRow key={entry.id} c={c} entry={entry} disabled={disabled} onAdopt={() => onAdopt(entry.id)} />
+                <UnmanagedRow key={entry.id} c={c} entry={entry} disabled={disabled} onAdopt={onAdopt} />
               ))}
             </div>
           </>

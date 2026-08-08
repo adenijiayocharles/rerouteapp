@@ -107,6 +107,14 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
                   {diff.diagnostics.filter((d) => d.severity === "warning").length} warning(s)
                 </strong>{" "}
                 in the managed block. You can still save — review the lines below.
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                  {diff.diagnostics.map((d, idx) => (
+                    <li key={idx} style={{ color: d.severity === "error" ? c.red : c.text }}>
+                      {d.line > 0 ? `Line ${d.line}: ` : ""}
+                      {d.message}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>

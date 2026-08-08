@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { api } from "./api";
@@ -579,14 +579,14 @@ export default function App() {
     }
   }
 
-  async function handleRequestAdopt(id: string) {
+  const handleRequestAdopt = useCallback(async (id: string) => {
     try {
       const diff = await api.previewAdopt(id);
       dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: id, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview adopt", message: errorMessage(err) } });
     }
-  }
+  }, []);
 
   async function handleAdoptSelected(ids: string[]) {
     await api.confirmAdoptMany(ids);
@@ -668,7 +668,7 @@ export default function App() {
     }
   }
 
-  async function handleSwitchIp(entryId: string, ipId: string) {
+  const handleSwitchIp = useCallback(async (entryId: string, ipId: string) => {
     dispatch({ type: "CLOSE_IP_MENU" });
     dispatch({ type: "SET_FLUSHING", id: entryId });
     try {
@@ -693,9 +693,9 @@ export default function App() {
       dispatch({ type: "SET_FLUSHING", id: null });
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to switch IP", message: errorMessage(err) } });
     }
-  }
+  }, []);
 
-  async function handleToggleEnabled(entryId: string) {
+  const handleToggleEnabled = useCallback(async (entryId: string) => {
     try {
       const result = await api.toggleEnabled(entryId);
       if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
@@ -714,7 +714,7 @@ export default function App() {
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to update entry", message: errorMessage(err) } });
     }
-  }
+  }, []);
 
   async function handleFlushDns() {
     dispatch({ type: "SET_TOAST", toast: { type: "info", title: "Flushing DNS…", message: "Flushing the local DNS resolver cache." } });
@@ -733,6 +733,15 @@ export default function App() {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "DNS flush failed", message: errorMessage(err), retryFlush: true } });
     }
   }
+
+  // Stable references so ListView's memoized EntryRow/UnmanagedRow children
+  // don't re-render (and re-subscribe their effects) on every unrelated
+  // App re-render — see EntryRow.tsx.
+  const handleSearchChange = useCallback((value: string) => dispatch({ type: "SET_SEARCH", value }), []);
+  const handleOpenAddPanel = useCallback(() => dispatch({ type: "OPEN_ADD_PANEL" }), []);
+  const handleClearGroupFilter = useCallback(() => dispatch({ type: "CLEAR_GROUP_FILTER" }), []);
+  const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
+  const handleOpenEditPanel = useCallback((entry: Entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry }), []);
 
   return (
     <div
@@ -789,16 +798,16 @@ export default function App() {
             totalEntryCount={state.entries.length}
             unmanagedEntries={state.groupFilter ? [] : filteredUnmanagedEntries}
             search={state.search}
-            onSearchChange={(v) => dispatch({ type: "SET_SEARCH", value: v })}
-            onAddClick={() => dispatch({ type: "OPEN_ADD_PANEL" })}
+            onSearchChange={handleSearchChange}
+            onAddClick={handleOpenAddPanel}
             groupFilter={state.groupFilter}
-            onClearGroupFilter={() => dispatch({ type: "CLEAR_GROUP_FILTER" })}
+            onClearGroupFilter={handleClearGroupFilter}
             openIpMenuId={state.openIpMenuId}
             flushingId={state.flushingId}
             disabled={state.externalChangeDetected}
-            onToggleDropdown={(id) => dispatch({ type: "TOGGLE_IP_MENU", id })}
+            onToggleDropdown={handleToggleIpMenu}
             onToggleEnabled={handleToggleEnabled}
-            onEdit={(entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry })}
+            onEdit={handleOpenEditPanel}
             onSwitchIp={handleSwitchIp}
             onAdopt={handleRequestAdopt}
           />

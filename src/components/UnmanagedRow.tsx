@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ColorTokens } from "../theme";
 import type { UnmanagedEntry } from "../types";
 import { PlusIcon } from "./icons";
@@ -7,10 +8,10 @@ interface UnmanagedRowProps {
   c: ColorTokens;
   entry: UnmanagedEntry;
   disabled: boolean;
-  onAdopt: () => void;
+  onAdopt: (id: string) => void;
 }
 
-export function UnmanagedRow({ c, entry, disabled, onAdopt }: UnmanagedRowProps) {
+export const UnmanagedRow = memo(function UnmanagedRow({ c, entry, disabled, onAdopt }: UnmanagedRowProps) {
   return (
     <div
       style={{
@@ -61,7 +62,7 @@ export function UnmanagedRow({ c, entry, disabled, onAdopt }: UnmanagedRowProps)
 
       <div style={{ gridColumn: "span 2" }}>
         <button
-          onClick={onAdopt}
+          onClick={() => onAdopt(entry.id)}
           disabled={disabled}
           style={{
             display: "flex",
@@ -84,4 +85,4 @@ export function UnmanagedRow({ c, entry, disabled, onAdopt }: UnmanagedRowProps)
       </div>
     </div>
   );
-}
+});

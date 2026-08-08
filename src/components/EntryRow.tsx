@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
 import { CheckIcon, ChevronDownIcon, EditIcon, Spinner } from "./icons";
@@ -9,15 +9,23 @@ interface EntryRowProps {
   isDropdownOpen: boolean;
   isFlushing: boolean;
   disabled: boolean;
-  onToggleDropdown: () => void;
-  onToggleEnabled: () => void;
-  onEdit: () => void;
-  onSwitchIp: (ipId: string) => void;
+  onToggleDropdown: (entryId: string) => void;
+  onToggleEnabled: (entryId: string) => void;
+  onEdit: (entry: Entry) => void;
+  onSwitchIp: (entryId: string, ipId: string) => void;
 }
 
 const gridTemplate = "44px minmax(0,2fr) minmax(0,1.7fr) minmax(0,1fr) 110px 40px";
 
-export function EntryRow({
+// Memoized so a re-render caused by unrelated state (typing in the search
+// box, editing the raw file, etc.) doesn't re-render every row and
+// re-subscribe every dropdown's document-level mousedown listener. Only
+// effective because every prop here is reference-stable across those
+// unrelated renders: `entry` comes straight from `state.entries` (the
+// array is replaced wholesale on refresh, but unchanged entry objects
+// inside it keep their identity), `c` is a module-level constant from
+// `colorsFor`, and the callbacks are `useCallback`-wrapped in App.tsx.
+export const EntryRow = memo(function EntryRow({
   c,
   entry,
   isDropdownOpen,
@@ -30,17 +38,18 @@ export function EntryRow({
 }: EntryRowProps) {
   const activeIp = entry.ips.find((i) => i.id === entry.activeIpId) ?? entry.ips[0];
   const ipMenuRef = useRef<HTMLDivElement>(null);
+  const entryId = entry.id;
 
   useEffect(() => {
     if (!isDropdownOpen) return;
     function handlePointerDown(e: MouseEvent) {
       if (ipMenuRef.current && !ipMenuRef.current.contains(e.target as Node)) {
-        onToggleDropdown();
+        onToggleDropdown(entryId);
       }
     }
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [isDropdownOpen, onToggleDropdown]);
+  }, [isDropdownOpen, entryId, onToggleDropdown]);
 
   return (
     <div
@@ -59,7 +68,7 @@ export function EntryRow({
     >
       <div>
         <button
-          onClick={onToggleEnabled}
+          onClick={() => onToggleEnabled(entryId)}
           disabled={disabled}
           title="Enable / disable"
           style={{
@@ -110,7 +119,7 @@ export function EntryRow({
 
       <div style={{ position: "relative" }} ref={ipMenuRef}>
         <button
-          onClick={onToggleDropdown}
+          onClick={() => onToggleDropdown(entryId)}
           disabled={disabled}
           title={activeIp?.label}
           style={{
@@ -167,7 +176,7 @@ export function EntryRow({
               return (
                 <button
                   key={ip.id}
-                  onClick={() => onSwitchIp(ip.id)}
+                  onClick={() => onSwitchIp(entryId, ip.id)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -223,7 +232,7 @@ export function EntryRow({
       <div style={{ fontSize: 11.5, color: c.textFaint }}>{entry.lastModified}</div>
       <div>
         <button
-          onClick={onEdit}
+          onClick={() => onEdit(entry)}
           disabled={disabled}
           title="Edit"
           style={{
@@ -244,6 +253,6 @@ export function EntryRow({
       </div>
     </div>
   );
-}
+});
 
 export { gridTemplate };
