@@ -34,6 +34,7 @@ interface State {
   diff: DiffPreview | null;
   pendingDraft: EntryDraft | null;
   pendingRestoreId: string | null;
+  pendingDeleteId: string | null;
   toast: ToastState | null;
   trayOpen: boolean;
   externalChangeDetected: boolean;
@@ -80,7 +81,7 @@ type Action =
   | { type: "REMOVE_DRAFT_IP_ROW"; uid: string }
   | { type: "SET_DRAFT_ACTIVE"; uid: string }
   | { type: "TOGGLE_DRAFT_ENABLED" }
-  | { type: "SHOW_DIFF"; diff: DiffPreview; pendingDraft: EntryDraft | null; pendingRestoreId: string | null }
+  | { type: "SHOW_DIFF"; diff: DiffPreview; pendingDraft: EntryDraft | null; pendingRestoreId: string | null; pendingDeleteId: string | null }
   | { type: "CLOSE_DIFF" }
   | { type: "CLOSE_DIFF_AND_DRAFT" }
   | { type: "SET_TOAST"; toast: ToastState | null }
@@ -100,6 +101,7 @@ const initialState: State = {
   diff: null,
   pendingDraft: null,
   pendingRestoreId: null,
+  pendingDeleteId: null,
   toast: null,
   trayOpen: false,
   externalChangeDetected: false,
@@ -232,11 +234,17 @@ function reducer(state: State, action: Action): State {
       if (!state.editingDraft) return state;
       return { ...state, editingDraft: { ...state.editingDraft, enabled: !state.editingDraft.enabled } };
     case "SHOW_DIFF":
-      return { ...state, diff: action.diff, pendingDraft: action.pendingDraft, pendingRestoreId: action.pendingRestoreId };
+      return {
+        ...state,
+        diff: action.diff,
+        pendingDraft: action.pendingDraft,
+        pendingRestoreId: action.pendingRestoreId,
+        pendingDeleteId: action.pendingDeleteId,
+      };
     case "CLOSE_DIFF":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null };
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null };
     case "CLOSE_DIFF_AND_DRAFT":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, editingDraft: null };
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, editingDraft: null };
     case "SET_TOAST":
       return { ...state, toast: action.toast };
     case "EXTERNAL_CHANGE_DETECTED":
@@ -411,7 +419,7 @@ export default function App() {
         const isShadow = await api.isShadowDomain(draft.hostname);
         if (isShadow) {
           const diff = await api.previewSave(draft);
-          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null });
+          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null });
           return;
         }
         await performConfirmSave(draft, true);
@@ -424,7 +432,7 @@ export default function App() {
 
     try {
       const diff = await api.previewSave(draft);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
     }
@@ -433,7 +441,7 @@ export default function App() {
   async function handleViewHistoryDiff(id: string) {
     try {
       const diff = await api.historyDiff(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't load diff", message: errorMessage(err) } });
     }
@@ -442,14 +450,23 @@ export default function App() {
   async function handleRequestRestore(id: string) {
     try {
       const diff = await api.previewRestore(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id, pendingDeleteId: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview restore", message: errorMessage(err) } });
     }
   }
 
+  async function handleRequestDelete(entryId: string) {
+    try {
+      const diff = await api.previewDelete(entryId);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: entryId });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview delete", message: errorMessage(err) } });
+    }
+  }
+
   async function handleConfirmDiff() {
-    const { diff, pendingDraft, pendingRestoreId } = state;
+    const { diff, pendingDraft, pendingRestoreId, pendingDeleteId } = state;
     if (!diff) return;
     try {
       if (diff.mode === "save" && pendingDraft) {
@@ -466,6 +483,14 @@ export default function App() {
         await refreshHistory();
         refreshHelperStatus().catch(() => {});
         dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Restored", message: "Previous version has been written to the hosts file." } });
+      } else if (diff.mode === "delete" && pendingDeleteId) {
+        const hostname = state.editingDraft?.hostname ?? "Entry";
+        await api.confirmDelete(pendingDeleteId);
+        dispatch({ type: "REMOVE_ENTRY", id: pendingDeleteId });
+        dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
+        await refreshHistory();
+        refreshHelperStatus().catch(() => {});
+        dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Entry deleted", message: `${hostname} has been removed from the hosts file.` } });
       } else {
         dispatch({ type: "CLOSE_DIFF" });
       }
@@ -621,6 +646,9 @@ export default function App() {
           onSetActive={(uid) => dispatch({ type: "SET_DRAFT_ACTIVE", uid })}
           onToggleEnabled={() => dispatch({ type: "TOGGLE_DRAFT_ENABLED" })}
           onSave={handleRequestSave}
+          onDelete={() => {
+            if (state.editingDraft?.id) handleRequestDelete(state.editingDraft.id);
+          }}
         />
       )}
 
