@@ -61,17 +61,15 @@ pub fn lint_managed_block(content: &str) -> Vec<LintDiagnostic> {
             });
         }
 
-        // First, check if the combined hostname part (with spaces) is valid
-        let combined_hostnames = hostname_tokens.join(" ");
-        if !validate::is_valid_hostname(&combined_hostnames) {
-            diagnostics.push(LintDiagnostic {
-                line: line_no,
-                severity: "error".to_string(),
-                message: format!("'{combined_hostnames}' is not a valid hostname"),
-            });
-        }
-
         for h in &hostname_tokens {
+            if !validate::is_valid_hostname(h) {
+                diagnostics.push(LintDiagnostic {
+                    line: line_no,
+                    severity: "error".to_string(),
+                    message: format!("'{h}' is not a valid hostname"),
+                });
+                continue;
+            }
             if validate::is_shadow_domain(h) {
                 diagnostics.push(LintDiagnostic {
                     line: line_no,
@@ -117,9 +115,15 @@ mod tests {
 
     #[test]
     fn invalid_hostname_is_an_error() {
-        let content = wrap("127.0.0.1\thas space.com");
+        let content = wrap("127.0.0.1\thas_underscore.com");
         let diags = lint_managed_block(&content);
-        assert!(diags.iter().any(|d| d.severity == "error" && d.message.contains("has")));
+        assert!(diags.iter().any(|d| d.severity == "error" && d.message.contains("has_underscore")));
+    }
+
+    #[test]
+    fn multiple_valid_hostnames_on_one_line_produces_no_error() {
+        let content = wrap("127.0.0.1\tapi.local admin.local");
+        assert!(lint_managed_block(&content).is_empty());
     }
 
     #[test]
