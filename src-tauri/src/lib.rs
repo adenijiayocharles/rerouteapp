@@ -72,6 +72,8 @@ pub fn run() {
             commands::history_diff,
             commands::preview_restore,
             commands::confirm_restore,
+            commands::preview_delete,
+            commands::confirm_delete,
             commands::flush_dns,
             commands::helper_status,
             commands::uninstall_helper,

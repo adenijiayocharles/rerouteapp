@@ -52,7 +52,7 @@ pub struct EntryDraft {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct DiffPreview {
-    pub mode: String, // "save" | "restore" | "view"
+    pub mode: String, // "save" | "restore" | "view" | "delete"
     #[serde(rename = "isNew")]
     pub is_new: bool,
     #[serde(rename = "isRemoval")]

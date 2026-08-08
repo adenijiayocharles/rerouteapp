@@ -503,6 +503,68 @@ pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: Strin
     })
 }
 
+/// Read-only diff for the Edit panel's "Delete" button — shows the line
+/// that will be removed, with no replacement line (mirrors
+/// `preview_restore`'s removal case).
+#[tauri::command]
+pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPreview, String> {
+    let conn = state.conn.lock().unwrap();
+    let entry = store::get_entry(&conn, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Entry not found.".to_string())?;
+
+    Ok(DiffPreview {
+        mode: "delete".to_string(),
+        is_new: false,
+        is_removal: true,
+        title: format!("Delete \u{201c}{}\u{201d}", entry.hostname),
+        subtitle: "Review the line that will be removed from the hosts file.".to_string(),
+        before_line: Some(hosts_parser::build_line(&entry)),
+        after_line: None,
+        is_shadow_domain: false,
+        restore_target_id: None,
+        history_before: None,
+        history_after: None,
+    })
+}
+
+#[tauri::command]
+pub fn confirm_delete(app: AppHandle, state: State<AppState>, entry_id: String) -> Result<WriteResult, String> {
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let before = store::get_entry(&tx, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Entry not found.".to_string())?;
+
+    store::delete_entry(&tx, &entry_id).map_err(|e| e.to_string())?;
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
+
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, false)?;
+    if !outcome.write_ok {
+        return Err("Failed to write the hosts file.".to_string());
+    }
+
+    store::insert_history(
+        &tx,
+        &before.hostname,
+        "Deleted entry",
+        Some(&entry_id),
+        Some(&before),
+        None,
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(WriteResult {
+        entry: None,
+        flush_ok: None,
+        flush_message: None,
+    })
+}
+
 /// Standalone "Flush DNS now" action, independent of any edit. Prefers
 /// the helper daemon (no prompt); falls back to a one-off elevated call
 /// if the daemon isn't installed/running (this action alone never
