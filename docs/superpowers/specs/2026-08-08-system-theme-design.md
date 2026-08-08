@@ -47,7 +47,7 @@ Split the existing single `theme` concept into two:
 
 ## Persistence
 
-- `THEME_STORAGE_KEY` (`"hosts-manager-theme"`) now stores a `ThemePreference` (`"light" | "dark" | "system"`) instead of just `Theme`.
+- `THEME_STORAGE_KEY` (`"reroute-theme"`) now stores a `ThemePreference` (`"light" | "dark" | "system"`) instead of just `Theme`.
 - `loadStoredTheme()` → rename to `loadStoredThemePreference()`, validates the stored string against all three values; returns `"system"` if the stored value is missing/invalid (i.e. fresh installs default to System). Existing installs with `"light"` or `"dark"` already stored are read as-is — no migration step needed, both remain valid `ThemePreference` values.
 
 ## Settings UI (`SettingsModal.tsx`)

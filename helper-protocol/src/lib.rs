@@ -1,4 +1,4 @@
-//! Wire protocol shared between the Hosts Manager app and its privileged
+//! Wire protocol shared between the Reroute app and its privileged
 //! helper daemon. Kept deliberately narrow: the daemon never executes a
 //! client-supplied shell command or path — only these two fixed
 //! operations — so there is no command/argument injection surface even
@@ -8,11 +8,11 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
 
-pub const HELPER_LABEL: &str = "com.hostsmanager.app.helper";
-pub const HELPER_BINARY_NAME: &str = "com.hostsmanager.app.helper";
-pub const SOCKET_PATH: &str = "/var/run/com.hostsmanager.app.helper.sock";
+pub const HELPER_LABEL: &str = "com.reroute.app.helper";
+pub const HELPER_BINARY_NAME: &str = "com.reroute.app.helper";
+pub const SOCKET_PATH: &str = "/var/run/com.reroute.app.helper.sock";
 pub const HELPER_INSTALL_DIR: &str = "/Library/PrivilegedHelperTools";
-pub const LAUNCH_DAEMON_PLIST_PATH: &str = "/Library/LaunchDaemons/com.hostsmanager.app.helper.plist";
+pub const LAUNCH_DAEMON_PLIST_PATH: &str = "/Library/LaunchDaemons/com.reroute.app.helper.plist";
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {

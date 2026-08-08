@@ -8,8 +8,8 @@ use serde::Serialize;
 use crate::models::Entry;
 use crate::validate;
 
-pub const START_MARKER: &str = "# hosts-manager:start";
-pub const END_MARKER: &str = "# hosts-manager:end";
+pub const START_MARKER: &str = "# reroute:start";
+pub const END_MARKER: &str = "# reroute:end";
 
 /// Docker Desktop writes and rewrites this exact block itself; lines
 /// inside it are never offered for adoption so the app never fights it
@@ -392,9 +392,9 @@ mod tests {
         let parsed = parse(original);
         let entries = vec![entry("e1", "api.myapp.local", "127.0.0.1", true, "gateway")];
         let rendered = render(&parsed, &entries);
-        assert!(rendered.starts_with("127.0.0.1\tlocalhost\n# my manual note\n\n# hosts-manager:start\n"));
+        assert!(rendered.starts_with("127.0.0.1\tlocalhost\n# my manual note\n\n# reroute:start\n"));
         assert!(rendered.contains("127.0.0.1\tapi.myapp.local    # gateway\n"));
-        assert!(rendered.trim_end().ends_with("# hosts-manager:end"));
+        assert!(rendered.trim_end().ends_with("# reroute:end"));
     }
 
     #[test]

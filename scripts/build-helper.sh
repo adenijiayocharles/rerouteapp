@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the privileged helper daemon and drops it at the fixed path
-# `target/<profile>/hosts-manager-helper` that tauri.conf.json's
+# `target/<profile>/reroute-helper` that tauri.conf.json's
 # `bundle.resources` and dev-mode `locate_helper_binary` both expect.
 #
 # Respects TAURI_ENV_TARGET_TRIPLE / TAURI_ENV_DEBUG, which the Tauri CLI
@@ -28,13 +28,13 @@ fi
 
 if [ -n "${TAURI_ENV_TARGET_TRIPLE:-}" ]; then
   cargo build $profile_flag -p helper --target "$TAURI_ENV_TARGET_TRIPLE"
-  built="target/$TAURI_ENV_TARGET_TRIPLE/$profile_dir/hosts-manager-helper"
+  built="target/$TAURI_ENV_TARGET_TRIPLE/$profile_dir/reroute-helper"
 else
   cargo build $profile_flag -p helper
-  built="target/$profile_dir/hosts-manager-helper"
+  built="target/$profile_dir/reroute-helper"
 fi
 
-dest="target/$profile_dir/hosts-manager-helper"
+dest="target/$profile_dir/reroute-helper"
 mkdir -p "target/$profile_dir"
 if [ "$built" != "$dest" ]; then
   cp "$built" "$dest"
@@ -47,5 +47,5 @@ fi
 # binary next to the running executable first.
 if [ "$profile_dir" != "release" ]; then
   mkdir -p target/release
-  cp "$dest" target/release/hosts-manager-helper
+  cp "$dest" target/release/reroute-helper
 fi

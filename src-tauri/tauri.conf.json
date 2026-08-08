@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Hosts Manager",
+  "productName": "Reroute",
   "version": "0.1.0",
-  "identifier": "com.hostsmanager.app",
+  "identifier": "com.reroute.app",
   "build": {
     "beforeDevCommand": "bash scripts/build-helper.sh && npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Hosts Manager",
+        "title": "Reroute",
         "width": 1180,
         "height": 760,
         "minWidth": 900,
@@ -35,7 +35,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../target/release/hosts-manager-helper": "hosts-manager-helper"
+      "../target/release/reroute-helper": "reroute-helper"
     },
     "macOS": {
       "hardenedRuntime": true,

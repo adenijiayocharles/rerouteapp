@@ -1046,7 +1046,7 @@ const hostsStreamParser: StreamParser<HostsLineState> = {
     if (stream.sol()) {
       state.seenIpOnLine = false;
       const trimmed = stream.string.trim();
-      if (trimmed === "# hosts-manager:start" || trimmed === "# hosts-manager:end") {
+      if (trimmed === "# reroute:start" || trimmed === "# reroute:end") {
         stream.skipToEnd();
         return "keyword";
       }

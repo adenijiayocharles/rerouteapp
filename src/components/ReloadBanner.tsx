@@ -24,7 +24,7 @@ export function ReloadBanner({ c, onReload, onDismiss }: ReloadBannerProps) {
     >
       <WarningIcon size={15} color={c.red} />
       <div style={{ flex: 1 }}>
-        The hosts file changed outside Hosts Manager. Reload to see the latest version before making further
+        The hosts file changed outside Reroute. Reload to see the latest version before making further
         changes.
       </div>
       <button

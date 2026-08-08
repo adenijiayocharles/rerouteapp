@@ -32,7 +32,7 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&app_data_dir)?;
 
-            let db_path = app_data_dir.join("hosts-manager.sqlite3");
+            let db_path = app_data_dir.join("reroute.sqlite3");
             let conn = Connection::open(&db_path)?;
             store::init_db(&conn)?;
             let read_conn = Connection::open(&db_path)?;

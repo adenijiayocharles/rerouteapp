@@ -10,7 +10,7 @@ This template should help get you started developing with Tauri, React and Types
 
 `.github/workflows/release-macos.yml` builds, signs, and notarizes the app for both
 `aarch64-apple-darwin` and `x86_64-apple-darwin` on a `v*` tag push, or via manual dispatch.
-It also builds and bundles `hosts-manager-helper`, the privileged LaunchDaemon this app
+It also builds and bundles `reroute-helper`, the privileged LaunchDaemon this app
 installs to `/Library/PrivilegedHelperTools` — that binary needs the same Developer ID
 signature as the app itself, since it runs standalone (outside the app bundle) as root.
 
@@ -30,10 +30,10 @@ Notes specific to this app:
 
 - Because it isn't sandboxed (it writes `/etc/hosts` and installs a LaunchDaemon), it can
   only ship via Developer ID direct distribution, not the Mac App Store.
-- `scripts/build-helper.sh` builds `hosts-manager-helper` for whichever target the Tauri
+- `scripts/build-helper.sh` builds `reroute-helper` for whichever target the Tauri
   CLI is building (`TAURI_ENV_TARGET_TRIPLE`) and drops it where `bundle.resources` in
   `tauri.conf.json` expects it, so both the app and helper end up signed for the same
   architecture in each matrix leg.
 - After the first signed + notarized build, verify on a clean Mac (no dev certs installed)
-  that installing the helper actually works: `launchctl print system/com.hostsmanager.app.helper`
+  that installing the helper actually works: `launchctl print system/com.reroute.app.helper`
   should show it running after granting the admin prompt.

@@ -35,7 +35,7 @@ impl ElevatedExecutor for MacOsElevatedExecutor {
         // AppleScript string literal, not for the outer shell.
         let escaped = shell_cmd.replace('\\', "\\\\").replace('"', "\\\"");
         let script = format!(
-            "do shell script \"{}\" with administrator privileges with prompt \"Hosts Manager needs administrator access to update {}.\"",
+            "do shell script \"{}\" with administrator privileges with prompt \"Reroute needs administrator access to update {}.\"",
             escaped, "the hosts file"
         );
 

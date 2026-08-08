@@ -67,7 +67,7 @@ Run inside `confirm_raw_save`'s transaction, after the verbatim write succeeds:
 
 ## Out of scope
 
-- No guard against removing the `# hosts-manager:start/end` markers themselves — doing so turns previously-managed lines into permanent unmanaged content and their entries disappear from the app's list; the diff view makes this visible before confirming, which is the safety net.
+- No guard against removing the `# reroute:start/end` markers themselves — doing so turns previously-managed lines into permanent unmanaged content and their entries disappear from the app's list; the diff view makes this visible before confirming, which is the safety net.
 - No sub-line column precision in lint squiggles (whole line only).
 - No linting or highlighting rules for content outside the managed block.
 - No autocomplete, multi-cursor, search/replace, or other full-IDE editor features beyond what CodeMirror gives for free.

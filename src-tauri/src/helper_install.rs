@@ -32,14 +32,14 @@ const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 pub fn locate_helper_binary(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join("hosts-manager-helper");
+            let candidate = dir.join("reroute-helper");
             if candidate.exists() {
                 return Some(candidate);
             }
         }
     }
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let candidate = resource_dir.join("hosts-manager-helper");
+        let candidate = resource_dir.join("reroute-helper");
         if candidate.exists() {
             return Some(candidate);
         }

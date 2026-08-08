@@ -17,7 +17,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { OnboardingModal } from "./components/OnboardingModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
-const THEME_STORAGE_KEY = "hosts-manager-theme";
+const THEME_STORAGE_KEY = "reroute-theme";
 
 function loadStoredThemePreference(): ThemePreference {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -597,7 +597,7 @@ export default function App() {
     refreshHelperStatus().catch(() => {});
     dispatch({
       type: "SET_TOAST",
-      toast: { type: "success", title: "Entries adopted", message: `${ids.length} ${ids.length === 1 ? "entry is" : "entries are"} now managed by Hosts Manager.` },
+      toast: { type: "success", title: "Entries adopted", message: `${ids.length} ${ids.length === 1 ? "entry is" : "entries are"} now managed by Reroute.` },
     });
   }
 
@@ -630,7 +630,7 @@ export default function App() {
         refreshHelperStatus().catch(() => {});
         dispatch({
           type: "SET_TOAST",
-          toast: { type: "success", title: "Entry adopted", message: `${result.entry?.hostname ?? "The entry"} is now managed by Hosts Manager.` },
+          toast: { type: "success", title: "Entry adopted", message: `${result.entry?.hostname ?? "The entry"} is now managed by Reroute.` },
         });
       } else if (diff.mode === "restore" && pendingRestoreId) {
         const result = await api.confirmRestore(pendingRestoreId);

@@ -99,7 +99,7 @@ export function SettingsModal({
           <ToggleRow
             c={c}
             title="Launch at login"
-            description="Start Hosts Manager automatically when you sign in."
+            description="Start Reroute automatically when you sign in."
             checked={launchAtLogin}
             onToggle={() => onSetLaunchAtLogin(!launchAtLogin)}
           />

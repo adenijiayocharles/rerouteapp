@@ -22,7 +22,7 @@ Either way — modal shown, or skipped because there was nothing to show — the
 
 A full-screen-centered modal, styled consistently with `DiffModal`/`SettingsModal` (same overlay, `cardBg`, `popShadow` treatment), shown in place of the Hosts list until dismissed:
 
-- **Header:** "Welcome to Hosts Manager" / "We found {N} entries already in your hosts file. Choose which ones to bring under management here."
+- **Header:** "Welcome to Reroute" / "We found {N} entries already in your hosts file. Choose which ones to bring under management here."
 - **Select all / none:** a small toggle above the list, mirroring the checklist's current all-checked state.
 - **Checklist:** one row per unmanaged entry (same `UnmanagedEntry` shape and exclusion rules as the existing per-row Adopt flow — no `localhost`/`broadcasthost`, no Docker Desktop section). Each row: checkbox (checked by default) + hostname + IP + comment, in a compact list — no per-row Adopt button here, selection state only.
 - **Footer:** `Skip` (secondary, closes the modal without adopting anything) and `Adopt {N} entries` (primary; label updates live with the selection count; disabled when 0 selected).

@@ -110,7 +110,7 @@ export function TitleBar({
         <TrafficLight color="#febc2e" label="Minimize" glyph="minimize" onClick={() => appWindow.minimize()} />
         <TrafficLight color="#28c840" label="Maximize" glyph="maximize" onClick={() => appWindow.toggleMaximize()} />
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: c.text, letterSpacing: "-0.01em" }}>Hosts Manager</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: c.text, letterSpacing: "-0.01em" }}>Reroute</div>
       <div style={{ flex: 1 }} />
       <button
         onClick={onFlushDns}
