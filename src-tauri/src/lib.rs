@@ -79,6 +79,7 @@ pub fn run() {
             commands::read_hosts_file,
             commands::preview_raw_save,
             commands::lint_hosts_content,
+            commands::confirm_raw_save,
             commands::flush_dns,
             commands::helper_status,
             commands::uninstall_helper,

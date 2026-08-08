@@ -84,12 +84,7 @@ fn draft_to_entry(id: &str, draft: &EntryDraft) -> Entry {
 }
 
 /// Backs up the current hosts file, regenerates it from `entries`, and
-/// writes it. Prefers the privileged helper daemon (no prompt) when it's
-/// reachable; otherwise installs it and performs this write in the same
-/// elevated prompt, so only the very first write (or a write after the
-/// daemon has somehow stopped) ever prompts. Primes `last_written` before
-/// issuing the write so the file watcher doesn't mistake this write for an
-/// out-of-band edit.
+/// writes it. See `write_content_to_hosts_file` for the actual write.
 fn backup_and_write(
     app: &AppHandle,
     state: &AppState,
@@ -100,16 +95,30 @@ fn backup_and_write(
         .map_err(|e| format!("Failed to read the hosts file: {e}"))?;
     let parsed = hosts_parser::parse(&current);
     let new_content = hosts_parser::render(&parsed, entries);
+    write_content_to_hosts_file(app, state, &new_content, do_flush)
+}
+
+/// Backs up the current hosts file and writes `new_content` to it verbatim.
+/// Prefers the privileged helper daemon (no prompt) when it's reachable;
+/// otherwise installs it and performs this write in the same elevated
+/// prompt, so only the very first write (or a write after the daemon has
+/// somehow stopped) ever prompts. Primes `last_written` before issuing the
+/// write so the file watcher doesn't mistake this write for an out-of-band
+/// edit.
+fn write_content_to_hosts_file(
+    app: &AppHandle,
+    state: &AppState,
+    new_content: &str,
+    do_flush: bool,
+) -> Result<(elevate::WriteOutcome, String), String> {
+    let current = std::fs::read_to_string(&state.hosts_path)
+        .map_err(|e| format!("Failed to read the hosts file: {e}"))?;
 
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
     let backup_path = state.backups_dir.join(format!("hosts-{timestamp}.bak"));
     std::fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
 
-    // Prime the watcher's "last written" guard with what we're about to
-    // write *before* issuing the write, so the filesystem event the write
-    // itself triggers can't race ahead of this update and get misreported
-    // as an out-of-band edit.
-    *state.last_written.lock().unwrap() = Some(new_content.clone());
+    *state.last_written.lock().unwrap() = Some(new_content.to_string());
 
     let flush_cmd = if do_flush { dns_flush::flush_command() } else { None };
 
@@ -121,7 +130,7 @@ fn backup_and_write(
     };
 
     let outcome = if helper_client::ping() {
-        let write_ok = helper_client::write_hosts(&new_content).is_ok();
+        let write_ok = helper_client::write_hosts(new_content).is_ok();
         let flush_ok = if write_ok && do_flush {
             Some(helper_client::flush_dns().is_ok())
         } else {
@@ -133,28 +142,18 @@ fn backup_and_write(
             app,
             state.executor.as_ref(),
             &state.backups_dir,
-            &new_content,
+            new_content,
             &state.hosts_path,
             flush_cmd.as_deref(),
         ) {
             Ok(outcome) => outcome,
-            Err(_) => {
-                // Couldn't install the daemon (e.g. its binary isn't present
-                // in this build) — fall back to a plain per-write elevation
-                // so the app still works, just with a prompt every time.
-                plain_elevated_write(&new_content)?
-            }
+            Err(_) => plain_elevated_write(new_content)?,
         }
     } else {
-        // The user turned the background helper off in Settings — never
-        // auto-install it, just prompt for a password on every write.
-        plain_elevated_write(&new_content)?
+        plain_elevated_write(new_content)?
     };
 
     if !outcome.write_ok {
-        // The write never landed, so undo the priming above — otherwise it
-        // would linger and could mask a later out-of-band edit that
-        // happens to match this content.
         *state.last_written.lock().unwrap() = None;
     }
 
@@ -613,6 +612,141 @@ pub fn preview_raw_save(state: State<AppState>, content: String) -> Result<DiffP
 #[tauri::command]
 pub fn lint_hosts_content(content: String) -> Vec<lint::LintDiagnostic> {
     lint::lint_managed_block(&content)
+}
+
+/// One structured-entry change produced by reconciling a raw save's
+/// managed block against the existing entry table.
+enum ReconcileChange {
+    Added { after: Entry },
+    Edited { before: Entry, after: Entry },
+    Deleted { before: Entry },
+}
+
+/// Mutates the entries table to match `parsed_lines` (the newly-saved
+/// managed block), matching by exact hostname string:
+/// - A line whose hostname matches an existing entry updates that entry in
+///   place (keeping its id and any extra, non-active IP candidates) — but
+///   only if something actually differs, so untouched lines produce no
+///   history noise.
+/// - An unmatched line becomes a new entry.
+/// - An existing entry whose hostname no longer appears is deleted.
+/// Returns the list of changes so the caller can record history for them
+/// once the on-disk write (which needs to happen first, for rollback
+/// safety) has succeeded.
+fn plan_reconciliation(
+    tx: &rusqlite::Transaction,
+    parsed_lines: &[hosts_parser::ParsedManagedLine],
+) -> Result<Vec<ReconcileChange>, String> {
+    let existing = store::list_entries(tx).map_err(|e| e.to_string())?;
+    let mut existing_by_hostname: std::collections::HashMap<String, Entry> =
+        existing.into_iter().map(|e| (e.hostname.clone(), e)).collect();
+    let mut changes = Vec::new();
+
+    for line in parsed_lines {
+        if let Some(existing_entry) = existing_by_hostname.remove(&line.hostname) {
+            let active_ip = existing_entry
+                .ips
+                .iter()
+                .find(|ip| ip.id == existing_entry.active_ip_id)
+                .map(|ip| ip.ip.as_str());
+            let changed = existing_entry.comment != line.comment
+                || existing_entry.enabled != line.enabled
+                || active_ip != Some(line.ip.as_str());
+            if !changed {
+                continue;
+            }
+            let draft = EntryDraft {
+                id: Some(existing_entry.id.clone()),
+                hostname: line.hostname.clone(),
+                comment: line.comment.clone(),
+                group: existing_entry.group.clone(),
+                enabled: line.enabled,
+                active_uid: existing_entry.active_ip_id.clone(),
+                ips: existing_entry
+                    .ips
+                    .iter()
+                    .map(|ip| crate::models::IpDraft {
+                        uid: ip.id.clone(),
+                        label: ip.label.clone(),
+                        ip: if ip.id == existing_entry.active_ip_id { line.ip.clone() } else { ip.ip.clone() },
+                    })
+                    .collect(),
+            };
+            let after = store::update_entry(tx, &existing_entry.id, &draft).map_err(|e| e.to_string())?;
+            changes.push(ReconcileChange::Edited { before: existing_entry, after });
+        } else {
+            let ip_uid = uuid::Uuid::new_v4().to_string();
+            let draft = EntryDraft {
+                id: None,
+                hostname: line.hostname.clone(),
+                comment: line.comment.clone(),
+                group: String::new(),
+                enabled: line.enabled,
+                active_uid: ip_uid.clone(),
+                ips: vec![crate::models::IpDraft { uid: ip_uid, label: line.ip.clone(), ip: line.ip.clone() }],
+            };
+            let after = store::insert_entry(tx, &draft).map_err(|e| e.to_string())?;
+            changes.push(ReconcileChange::Added { after });
+        }
+    }
+
+    for (_, orphaned) in existing_by_hostname {
+        store::delete_entry(tx, &orphaned.id).map_err(|e| e.to_string())?;
+        changes.push(ReconcileChange::Deleted { before: orphaned });
+    }
+
+    Ok(changes)
+}
+
+/// Records one History row per change, using the shared backup path from
+/// the write that just succeeded. Called only after the write succeeds.
+fn record_reconciliation_history(
+    tx: &rusqlite::Transaction,
+    changes: &[ReconcileChange],
+    backup_path: &str,
+) -> Result<(), String> {
+    for change in changes {
+        match change {
+            ReconcileChange::Added { after } => {
+                store::insert_history(tx, &after.hostname, "Added entry", Some(&after.id), None, Some(after), Some(backup_path))
+                    .map_err(|e| e.to_string())?;
+            }
+            ReconcileChange::Edited { before, after } => {
+                store::insert_history(tx, &after.hostname, "Edited entry", Some(&after.id), Some(before), Some(after), Some(backup_path))
+                    .map_err(|e| e.to_string())?;
+            }
+            ReconcileChange::Deleted { before } => {
+                store::insert_history(tx, &before.hostname, "Deleted entry", Some(&before.id), Some(before), None, Some(backup_path))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Writes `content` verbatim to the hosts file, then reconciles the
+/// structured entry table to match its managed block. DB mutation happens
+/// before the disk write (so a write failure rolls the transaction back
+/// and nothing diverges); history rows are recorded after, once the
+/// backup path from the successful write is known.
+#[tauri::command]
+pub fn confirm_raw_save(app: AppHandle, state: State<AppState>, content: String) -> Result<WriteResult, String> {
+    let mut conn = state.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let parsed_lines = hosts_parser::parse_managed_block(&content);
+    let changes = plan_reconciliation(&tx, &parsed_lines)?;
+
+    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &content, false)?;
+    if !outcome.write_ok {
+        return Err("Failed to write the hosts file.".to_string());
+    }
+
+    record_reconciliation_history(&tx, &changes, &backup_path)?;
+    prune_history(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(WriteResult { entry: None, flush_ok: None, flush_message: None })
 }
 
 /// Standalone "Flush DNS now" action, independent of any edit. Prefers
