@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::diff::DiffLine;
+use crate::lint::LintDiagnostic;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpCandidate {
     pub id: String,
@@ -52,7 +55,7 @@ pub struct EntryDraft {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct DiffPreview {
-    pub mode: String, // "save" | "restore" | "view" | "delete"
+    pub mode: String, // "save" | "restore" | "view" | "delete" | "raw"
     #[serde(rename = "isNew")]
     pub is_new: bool,
     #[serde(rename = "isRemoval")]
@@ -71,4 +74,7 @@ pub struct DiffPreview {
     pub history_before: Option<Entry>,
     #[serde(rename = "historyAfter")]
     pub history_after: Option<Entry>,
+    #[serde(rename = "diffLines")]
+    pub diff_lines: Option<Vec<DiffLine>>,
+    pub diagnostics: Option<Vec<LintDiagnostic>>,
 }

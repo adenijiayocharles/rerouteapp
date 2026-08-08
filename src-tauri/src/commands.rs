@@ -228,6 +228,8 @@ pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<Dif
         restore_target_id: None,
         history_before: None,
         history_after: None,
+        diff_lines: None,
+        diagnostics: None,
     })
 }
 
@@ -410,6 +412,8 @@ pub fn history_diff(state: State<AppState>, history_id: String) -> Result<DiffPr
         restore_target_id: None,
         history_before: h.before,
         history_after: h.after,
+        diff_lines: None,
+        diagnostics: None,
     })
 }
 
@@ -446,6 +450,8 @@ pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<Dif
         restore_target_id: Some(target_id),
         history_before: current,
         history_after: h.before,
+        diff_lines: None,
+        diagnostics: None,
     })
 }
 
@@ -525,6 +531,8 @@ pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPr
         restore_target_id: None,
         history_before: Some(entry),
         history_after: None,
+        diff_lines: None,
+        diagnostics: None,
     })
 }
 
