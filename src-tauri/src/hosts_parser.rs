@@ -44,22 +44,32 @@ pub struct ParsedManagedLine {
     pub comment: String,
 }
 
+/// Finds the 0-based line indices of the start/end managed-block markers,
+/// if both are present and in order. Shared by `parse()` (which needs to
+/// split prefix/suffix around them) and the raw-editor lint pass (which
+/// needs to map diagnostics back to original file line numbers).
+pub fn find_managed_block_bounds(content: &str) -> Option<(usize, usize)> {
+    let lines: Vec<&str> = content.lines().collect();
+    let start_idx = lines.iter().position(|l| l.trim_end() == START_MARKER)?;
+    let end_idx = lines.iter().position(|l| l.trim_end() == END_MARKER)?;
+    if end_idx > start_idx {
+        Some((start_idx, end_idx))
+    } else {
+        None
+    }
+}
+
 pub fn parse(content: &str) -> ParsedHostsFile {
     let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let trailing_newline = !content.is_empty() && content.ends_with('\n');
 
-    let start_idx = lines.iter().position(|l| l.trim_end() == START_MARKER);
-    let end_idx = lines.iter().position(|l| l.trim_end() == END_MARKER);
-
-    if let (Some(start), Some(end)) = (start_idx, end_idx) {
-        if end > start {
-            return ParsedHostsFile {
-                prefix: lines[..start].to_vec(),
-                suffix: lines[end + 1..].to_vec(),
-                had_managed_block: true,
-                trailing_newline,
-            };
-        }
+    if let Some((start, end)) = find_managed_block_bounds(content) {
+        return ParsedHostsFile {
+            prefix: lines[..start].to_vec(),
+            suffix: lines[end + 1..].to_vec(),
+            had_managed_block: true,
+            trailing_newline,
+        };
     }
 
     ParsedHostsFile {
@@ -74,15 +84,10 @@ pub fn parse(content: &str) -> ParsedHostsFile {
 /// structured entries. Used to seed the database on first run against a
 /// hosts file that already has an app-managed block (e.g. a prior install).
 pub fn parse_managed_block(content: &str) -> Vec<ParsedManagedLine> {
-    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    let start_idx = lines.iter().position(|l| l.trim_end() == START_MARKER);
-    let end_idx = lines.iter().position(|l| l.trim_end() == END_MARKER);
-    let (Some(start), Some(end)) = (start_idx, end_idx) else {
+    let Some((start, end)) = find_managed_block_bounds(content) else {
         return Vec::new();
     };
-    if end <= start {
-        return Vec::new();
-    }
+    let lines: Vec<&str> = content.lines().collect();
     lines[start + 1..end]
         .iter()
         .filter_map(|l| parse_managed_line(l))
