@@ -17,6 +17,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { OnboardingModal } from "./components/OnboardingModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
+const ENTRIES_CHANGED_EVENT = "entries-changed";
 const THEME_STORAGE_KEY = "reroute-theme";
 
 function loadStoredThemePreference(): ThemePreference {
@@ -447,6 +448,20 @@ export default function App() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen(HOSTS_CHANGED_EVENT, () => dispatch({ type: "EXTERNAL_CHANGE_DETECTED" })).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    // Entries can change from the menu bar tray (switching an entry's
+    // active IP) without any invoke() call originating from this window,
+    // so pick those changes up here instead of relying on each caller to
+    // refresh.
+    let unlisten: (() => void) | undefined;
+    listen(ENTRIES_CHANGED_EVENT, () => {
+      refreshEntries().catch(() => {});
+    }).then((fn) => {
       unlisten = fn;
     });
     return () => unlisten?.();

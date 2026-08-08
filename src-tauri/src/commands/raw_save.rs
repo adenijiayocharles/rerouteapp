@@ -230,7 +230,9 @@ pub fn confirm_raw_save(app: AppHandle, state: State<AppState>, content: String)
 
     record_reconciliation_history(&tx, &changes, &backup_path)?;
     prune_history(&tx)?;
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult { entry: None, flush_ok: None, flush_message: None })
 }

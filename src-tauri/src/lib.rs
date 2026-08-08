@@ -9,6 +9,7 @@ mod lint;
 mod models;
 mod state;
 mod store;
+mod tray;
 mod validate;
 mod watcher;
 
@@ -60,6 +61,15 @@ pub fn run() {
             match watcher::start_watching(app.handle().clone(), hosts_path, last_written) {
                 Ok(w) => app.state::<AppState>().set_watcher(w),
                 Err(e) => eprintln!("failed to start hosts file watcher: {e}"),
+            }
+
+            let initial_entries = {
+                let state = app.state::<AppState>();
+                let conn = state.read_conn.lock().unwrap();
+                store::list_entries(&conn).unwrap_or_default()
+            };
+            if let Err(e) = tray::build(app.handle(), &initial_entries) {
+                eprintln!("failed to build the menu bar tray icon: {e}");
             }
 
             Ok(())

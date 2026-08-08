@@ -121,6 +121,7 @@ pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Resu
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult {
         entry: Some(after_entry),
@@ -193,6 +194,7 @@ pub fn confirm_adopt_many(app: AppHandle, state: State<AppState>, ids: Vec<Strin
     }
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &final_entries);
 
     Ok(after_entries)
 }

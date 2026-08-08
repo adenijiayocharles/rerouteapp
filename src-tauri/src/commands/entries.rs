@@ -115,6 +115,7 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult {
         entry: Some(after_entry),
@@ -164,6 +165,7 @@ pub fn switch_active_ip(
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, &target_ip.ip);
     Ok(WriteResult {
@@ -201,6 +203,7 @@ pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) 
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult {
         entry: Some(after_entry),
@@ -317,6 +320,7 @@ pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: Strin
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult {
         entry: after_entry,
@@ -381,6 +385,7 @@ pub fn confirm_delete(app: AppHandle, state: State<AppState>, entry_id: String) 
     .map_err(|e| e.to_string())?;
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
 
     Ok(WriteResult {
         entry: None,
