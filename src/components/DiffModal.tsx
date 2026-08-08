@@ -15,7 +15,7 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
 
   const cancelLabel = diff.mode === "view" ? "Close" : "Cancel";
   const showConfirm = diff.mode !== "view";
-  const confirmLabel = diff.mode === "restore" ? "Restore version" : "Write to hosts file";
+  const confirmLabel = diff.mode === "restore" ? "Restore version" : diff.mode === "delete" ? "Delete entry" : "Write to hosts file";
   const confirmDisabled = diff.isShadowDomain && diff.mode === "save" && !shadowAck;
 
   return (
@@ -136,7 +136,7 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
                 height: 38,
                 borderRadius: 8,
                 border: "none",
-                background: c.accent,
+                background: diff.mode === "delete" ? c.red : c.accent,
                 color: "#fff",
                 fontSize: 13,
                 fontWeight: 600,
