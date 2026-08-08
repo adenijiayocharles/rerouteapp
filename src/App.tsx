@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from "react";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { api } from "./api";
-import { colorsFor, type Theme } from "./theme";
+import { colorsFor, type Theme, type ThemePreference } from "./theme";
 import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, ToastState } from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
@@ -17,12 +17,18 @@ import { SettingsModal } from "./components/SettingsModal";
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const THEME_STORAGE_KEY = "hosts-manager-theme";
 
-function loadStoredTheme(): Theme {
-  return localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+function loadStoredThemePreference(): ThemePreference {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+}
+
+function systemPrefersDarkNow(): boolean {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 interface State {
-  theme: Theme;
+  themePreference: ThemePreference;
+  systemPrefersDark: boolean;
   view: "list" | "history";
   search: string;
   groupFilter: string | null;
@@ -50,7 +56,8 @@ interface State {
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
   | { type: "SET_HISTORY"; history: HistoryEntry[] }
-  | { type: "SET_THEME"; theme: Theme }
+  | { type: "SET_THEME_PREFERENCE"; preference: ThemePreference }
+  | { type: "SET_SYSTEM_PREFERS_DARK"; prefersDark: boolean }
   | { type: "SET_HELPER_ACTIVE"; active: boolean }
   | { type: "SET_HELPER_ENABLED"; enabled: boolean }
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
@@ -89,7 +96,8 @@ type Action =
   | { type: "DISMISS_EXTERNAL_CHANGE" };
 
 const initialState: State = {
-  theme: loadStoredTheme(),
+  themePreference: loadStoredThemePreference(),
+  systemPrefersDark: systemPrefersDarkNow(),
   view: "list",
   search: "",
   groupFilter: null,
@@ -136,10 +144,15 @@ function reducer(state: State, action: Action): State {
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
       return { ...state, settingsOpen: false };
-    case "TOGGLE_THEME":
-      return { ...state, theme: state.theme === "light" ? "dark" : "light" };
-    case "SET_THEME":
-      return { ...state, theme: action.theme };
+    case "TOGGLE_THEME": {
+      const resolved: Theme =
+        state.themePreference === "system" ? (state.systemPrefersDark ? "dark" : "light") : state.themePreference;
+      return { ...state, themePreference: resolved === "light" ? "dark" : "light" };
+    }
+    case "SET_THEME_PREFERENCE":
+      return { ...state, themePreference: action.preference };
+    case "SET_SYSTEM_PREFERS_DARK":
+      return { ...state, systemPrefersDark: action.prefersDark };
     case "GO_LIST":
       return { ...state, view: "list", trayOpen: false, groupFilter: null };
     case "GO_HISTORY":
@@ -262,7 +275,9 @@ function errorMessage(err: unknown): string {
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const c = colorsFor(state.theme);
+  const theme: Theme =
+    state.themePreference === "system" ? (state.systemPrefersDark ? "dark" : "light") : state.themePreference;
+  const c = colorsFor(theme);
 
   async function refreshEntries() {
     const entries = await api.listEntries();
@@ -356,8 +371,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(THEME_STORAGE_KEY, state.theme);
-  }, [state.theme]);
+    localStorage.setItem(THEME_STORAGE_KEY, state.themePreference);
+  }, [state.themePreference]);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e: MediaQueryListEvent) => dispatch({ type: "SET_SYSTEM_PREFERS_DARK", prefersDark: e.matches });
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+  }, []);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -584,7 +606,7 @@ export default function App() {
     >
       <TitleBar
         c={c}
-        theme={state.theme}
+        theme={theme}
         onToggleTheme={() => dispatch({ type: "TOGGLE_THEME" })}
         trayOpen={state.trayOpen}
         onToggleTray={() => dispatch({ type: "TOGGLE_TRAY" })}
@@ -670,10 +692,10 @@ export default function App() {
           launchAtLogin={state.launchAtLogin}
           autoFlushDns={state.autoFlushDns}
           confirmBeforeSave={state.confirmBeforeSave}
-          theme={state.theme}
+          themePreference={state.themePreference}
           historyRetention={state.historyRetention}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
-          onSetTheme={(theme) => dispatch({ type: "SET_THEME", theme })}
+          onSetThemePreference={(preference) => dispatch({ type: "SET_THEME_PREFERENCE", preference })}
           onSetHelperEnabled={handleSetHelperEnabled}
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
           onSetAutoFlushDns={handleSetAutoFlushDns}

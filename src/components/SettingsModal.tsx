@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
-import type { ColorTokens, Theme } from "../theme";
+import type { ColorTokens, ThemePreference } from "../theme";
 import type { HistoryRetention } from "../types";
-import { CloseIcon, MoonIcon, SunIcon, WarningIcon } from "./icons";
+import { CloseIcon, MonitorIcon, MoonIcon, SunIcon, WarningIcon } from "./icons";
 
 interface SettingsModalProps {
   c: ColorTokens;
@@ -10,14 +10,14 @@ interface SettingsModalProps {
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
-  theme: Theme;
+  themePreference: ThemePreference;
   historyRetention: HistoryRetention;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
   onSetAutoFlushDns: (enabled: boolean) => void;
   onSetConfirmBeforeSave: (enabled: boolean) => void;
-  onSetTheme: (theme: Theme) => void;
+  onSetThemePreference: (preference: ThemePreference) => void;
   onSetHistoryRetention: (value: HistoryRetention) => void;
 }
 
@@ -28,14 +28,14 @@ export function SettingsModal({
   launchAtLogin,
   autoFlushDns,
   confirmBeforeSave,
-  theme,
+  themePreference,
   historyRetention,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
   onSetAutoFlushDns,
   onSetConfirmBeforeSave,
-  onSetTheme,
+  onSetThemePreference,
   onSetHistoryRetention,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
@@ -89,8 +89,9 @@ export function SettingsModal({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>Theme</div>
             <div style={{ display: "flex", gap: 4, background: c.chipBg, borderRadius: 8, padding: 3 }}>
-              <ThemeOption c={c} active={theme === "light"} onClick={() => onSetTheme("light")} icon={<SunIcon size={13} />} label="Light" />
-              <ThemeOption c={c} active={theme === "dark"} onClick={() => onSetTheme("dark")} icon={<MoonIcon size={13} />} label="Dark" />
+              <ThemeOption c={c} active={themePreference === "light"} onClick={() => onSetThemePreference("light")} icon={<SunIcon size={13} />} label="Light" />
+              <ThemeOption c={c} active={themePreference === "dark"} onClick={() => onSetThemePreference("dark")} icon={<MoonIcon size={13} />} label="Dark" />
+              <ThemeOption c={c} active={themePreference === "system"} onClick={() => onSetThemePreference("system")} icon={<MonitorIcon size={13} />} label="System" />
             </div>
           </div>
 

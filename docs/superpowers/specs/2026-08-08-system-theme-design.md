@@ -1,5 +1,29 @@
 # Add a "System" theme option
 
+## Dark palette: make it truly dark
+
+The current `darkColors` (`src/theme.ts`) are dark grays (`bg: #191a1e`, `cardBg: #212227`, etc.), not true dark. Revise the palette toward near-black, OLED-style surfaces while preserving the existing elevation hierarchy (bg/titlebar/sidebar → card → chip):
+
+| token | old | new |
+| --- | --- | --- |
+| `pageBg` | `#0d0d10` | `#000000` |
+| `bg` | `#191a1e` | `#000000` |
+| `titlebar` | `#1d1e23` | `#0b0b0d` |
+| `sidebarBg` | `#1d1e23` | `#0b0b0d` |
+| `cardBg` | `#212227` | `#131315` |
+| `inputBg` | `#212227` | `#111113` |
+| `chipBg` | `#26272d` | `#1a1a1d` |
+| `border` | `rgba(255,255,255,0.08)` | `rgba(255,255,255,0.10)` |
+| `rowBorder` | `rgba(255,255,255,0.06)` | `rgba(255,255,255,0.07)` |
+| `rowHover` | `rgba(255,255,255,0.045)` | `rgba(255,255,255,0.06)` |
+| `scrollThumb` | `rgba(255,255,255,0.15)` | `rgba(255,255,255,0.18)` |
+| `textFaint` | `#6c6c75` | `#87878f` |
+| `overlay` | `rgba(0,0,0,0.6)` | `rgba(0,0,0,0.65)` |
+| `windowShadow` | `...rgba(0,0,0,0.7)` | `...rgba(0,0,0,0.8)` |
+| `popShadow` | `...rgba(0,0,0,0.55)` | `...rgba(0,0,0,0.6)` |
+
+Border/hover/scrollbar opacities are bumped up slightly because the same alpha reads with less contrast against pure black than it did against the old dark-gray base. `textFaint` is lightened for the same reason — at the old value its contrast ratio against `#000000` drops to ~4:1, under AA for the small uppercase labels it's used on (`SectionLabel`, etc.). `text`, `textMuted`, `accent`, `green`, `red`, and their `*Soft` variants are unchanged — they already have sufficient contrast against black. Light theme (`lightColors`) is untouched.
+
 ## Problem
 
 Settings currently offers only two theme choices, Light and Dark (`SettingsModal.tsx`), backed by a single stored value `theme: "light" | "dark"` (`src/theme.ts`, `App.tsx`). There is no way to have the app automatically follow the OS's light/dark appearance.

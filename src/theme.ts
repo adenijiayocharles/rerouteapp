@@ -54,33 +54,34 @@ export const lightColors: ColorTokens = {
 };
 
 export const darkColors: ColorTokens = {
-  pageBg: "#0d0d10",
-  bg: "#191a1e",
-  titlebar: "#1d1e23",
-  sidebarBg: "#1d1e23",
-  border: "rgba(255,255,255,0.08)",
-  rowBorder: "rgba(255,255,255,0.06)",
+  pageBg: "#000000",
+  bg: "#000000",
+  titlebar: "#0b0b0d",
+  sidebarBg: "#0b0b0d",
+  border: "rgba(255,255,255,0.10)",
+  rowBorder: "rgba(255,255,255,0.07)",
   text: "#f4f4f5",
   textMuted: "#a1a1aa",
-  textFaint: "#6c6c75",
+  textFaint: "#87878f",
   accent: "#8285f7",
   accentSoft: "rgba(130,133,247,0.18)",
   green: "#34d399",
   greenSoft: "rgba(52,211,153,0.14)",
   red: "#fb7185",
   redSoft: "rgba(251,113,133,0.14)",
-  rowHover: "rgba(255,255,255,0.045)",
-  chipBg: "#26272d",
-  inputBg: "#212227",
-  overlay: "rgba(0,0,0,0.6)",
-  cardBg: "#212227",
+  rowHover: "rgba(255,255,255,0.06)",
+  chipBg: "#1a1a1d",
+  inputBg: "#111113",
+  overlay: "rgba(0,0,0,0.65)",
+  cardBg: "#131315",
   trayBtnBg: "transparent",
-  scrollThumb: "rgba(255,255,255,0.15)",
-  windowShadow: "0 30px 80px -20px rgba(0,0,0,0.7)",
-  popShadow: "0 16px 40px -8px rgba(0,0,0,0.55)",
+  scrollThumb: "rgba(255,255,255,0.18)",
+  windowShadow: "0 30px 80px -20px rgba(0,0,0,0.8)",
+  popShadow: "0 16px 40px -8px rgba(0,0,0,0.6)",
 };
 
 export type Theme = "light" | "dark";
+export type ThemePreference = Theme | "system";
 
 export function colorsFor(theme: Theme): ColorTokens {
   return theme === "light" ? lightColors : darkColors;
