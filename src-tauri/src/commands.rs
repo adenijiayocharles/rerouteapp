@@ -1,11 +1,13 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
+use crate::diff;
 use crate::dns_flush;
 use crate::elevate;
 use crate::helper_client;
 use crate::helper_install;
 use crate::hosts_parser;
+use crate::lint;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry, IpCandidate};
 use crate::state::AppState;
 use crate::store;
@@ -571,6 +573,46 @@ pub fn confirm_delete(app: AppHandle, state: State<AppState>, entry_id: String) 
         flush_ok: None,
         flush_message: None,
     })
+}
+
+/// Reads `/etc/hosts` fresh off disk, for opening the raw editor and for
+/// refreshing it after an external-change reload.
+#[tauri::command]
+pub fn read_hosts_file(state: State<AppState>) -> Result<String, String> {
+    std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))
+}
+
+/// Read-only diff + lint pass for the raw editor's Save confirmation.
+/// Diffs the given `content` against what's currently on disk and lints
+/// its managed block, without writing anything.
+#[tauri::command]
+pub fn preview_raw_save(state: State<AppState>, content: String) -> Result<DiffPreview, String> {
+    let current = std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))?;
+    let diff_lines = diff::diff_lines(&current, &content);
+    let diagnostics = lint::lint_managed_block(&content);
+
+    Ok(DiffPreview {
+        mode: "raw".to_string(),
+        is_new: false,
+        is_removal: false,
+        title: "Save changes to the hosts file".to_string(),
+        subtitle: "Review what will change before writing.".to_string(),
+        before_line: None,
+        after_line: None,
+        is_shadow_domain: false,
+        restore_target_id: None,
+        history_before: None,
+        history_after: None,
+        diff_lines: Some(diff_lines),
+        diagnostics: Some(diagnostics),
+    })
+}
+
+/// Live linting while typing in the raw editor. Shares `lint::lint_managed_block`
+/// with `preview_raw_save` so the two can never disagree about what's invalid.
+#[tauri::command]
+pub fn lint_hosts_content(content: String) -> Vec<lint::LintDiagnostic> {
+    lint::lint_managed_block(&content)
 }
 
 /// Standalone "Flush DNS now" action, independent of any edit. Prefers
