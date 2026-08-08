@@ -5,6 +5,7 @@ mod elevate;
 mod helper_client;
 mod helper_install;
 mod hosts_parser;
+mod lint;
 mod models;
 mod state;
 mod store;
