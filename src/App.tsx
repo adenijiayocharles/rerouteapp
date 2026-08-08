@@ -8,6 +8,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ListView } from "./components/ListView";
 import { HistoryView } from "./components/HistoryView";
+import { RawEditorView } from "./components/RawEditorView";
 import { DraftPanel } from "./components/DraftPanel";
 import { DiffModal } from "./components/DiffModal";
 import { Toast } from "./components/Toast";
@@ -29,7 +30,7 @@ function systemPrefersDarkNow(): boolean {
 interface State {
   themePreference: ThemePreference;
   systemPrefersDark: boolean;
-  view: "list" | "history";
+  view: "list" | "history" | "raw";
   search: string;
   groupFilter: string | null;
   entries: Entry[];
@@ -41,6 +42,9 @@ interface State {
   pendingDraft: EntryDraft | null;
   pendingRestoreId: string | null;
   pendingDeleteId: string | null;
+  pendingRawSave: string | null;
+  rawFileContent: string | null;
+  rawDraftContent: string | null;
   toast: ToastState | null;
   trayOpen: boolean;
   externalChangeDetected: boolean;
@@ -69,6 +73,9 @@ type Action =
   | { type: "TOGGLE_THEME" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
+  | { type: "GO_RAW" }
+  | { type: "SET_RAW_FILE_CONTENT"; content: string }
+  | { type: "SET_RAW_DRAFT_CONTENT"; content: string }
   | { type: "SELECT_GROUP"; group: string }
   | { type: "CLEAR_GROUP_FILTER" }
   | { type: "SET_SEARCH"; value: string }
@@ -88,7 +95,14 @@ type Action =
   | { type: "REMOVE_DRAFT_IP_ROW"; uid: string }
   | { type: "SET_DRAFT_ACTIVE"; uid: string }
   | { type: "TOGGLE_DRAFT_ENABLED" }
-  | { type: "SHOW_DIFF"; diff: DiffPreview; pendingDraft: EntryDraft | null; pendingRestoreId: string | null; pendingDeleteId: string | null }
+  | {
+      type: "SHOW_DIFF";
+      diff: DiffPreview;
+      pendingDraft: EntryDraft | null;
+      pendingRestoreId: string | null;
+      pendingDeleteId: string | null;
+      pendingRawSave: string | null;
+    }
   | { type: "CLOSE_DIFF" }
   | { type: "CLOSE_DIFF_AND_DRAFT" }
   | { type: "SET_TOAST"; toast: ToastState | null }
@@ -110,6 +124,9 @@ const initialState: State = {
   pendingDraft: null,
   pendingRestoreId: null,
   pendingDeleteId: null,
+  pendingRawSave: null,
+  rawFileContent: null,
+  rawDraftContent: null,
   toast: null,
   trayOpen: false,
   externalChangeDetected: false,
@@ -157,6 +174,12 @@ function reducer(state: State, action: Action): State {
       return { ...state, view: "list", trayOpen: false, groupFilter: null };
     case "GO_HISTORY":
       return { ...state, view: "history", trayOpen: false };
+    case "GO_RAW":
+      return { ...state, view: "raw", trayOpen: false };
+    case "SET_RAW_FILE_CONTENT":
+      return { ...state, rawFileContent: action.content, rawDraftContent: action.content };
+    case "SET_RAW_DRAFT_CONTENT":
+      return { ...state, rawDraftContent: action.content };
     case "SELECT_GROUP":
       return { ...state, view: "list", trayOpen: false, groupFilter: action.group };
     case "CLEAR_GROUP_FILTER":
@@ -253,11 +276,12 @@ function reducer(state: State, action: Action): State {
         pendingDraft: action.pendingDraft,
         pendingRestoreId: action.pendingRestoreId,
         pendingDeleteId: action.pendingDeleteId,
+        pendingRawSave: action.pendingRawSave,
       };
     case "CLOSE_DIFF":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null };
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null };
     case "CLOSE_DIFF_AND_DRAFT":
-      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, editingDraft: null };
+      return { ...state, diff: null, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null, editingDraft: null };
     case "SET_TOAST":
       return { ...state, toast: action.toast };
     case "EXTERNAL_CHANGE_DETECTED":
@@ -294,12 +318,18 @@ export default function App() {
     dispatch({ type: "SET_HELPER_ACTIVE", active });
   }
 
+  async function refreshRawFile() {
+    const content = await api.readHostsFile();
+    dispatch({ type: "SET_RAW_FILE_CONTENT", content });
+  }
+
   useEffect(() => {
     refreshEntries().catch((err) =>
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to load entries", message: errorMessage(err) } }),
     );
     refreshHistory().catch(() => {});
     refreshHelperStatus().catch(() => {});
+    refreshRawFile().catch(() => {});
     api.getHelperEnabled().then((enabled) => dispatch({ type: "SET_HELPER_ENABLED", enabled })).catch(() => {});
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
     api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
@@ -407,6 +437,7 @@ export default function App() {
     try {
       await refreshEntries();
       await refreshHistory();
+      await refreshRawFile();
       dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Reloaded", message: "Loaded the latest hosts file." } });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Reload failed", message: errorMessage(err) } });
@@ -441,7 +472,7 @@ export default function App() {
         const isShadow = await api.isShadowDomain(draft.hostname);
         if (isShadow) {
           const diff = await api.previewSave(draft);
-          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null });
+          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
           return;
         }
         await performConfirmSave(draft, true);
@@ -454,7 +485,7 @@ export default function App() {
 
     try {
       const diff = await api.previewSave(draft);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
     }
@@ -463,7 +494,7 @@ export default function App() {
   async function handleViewHistoryDiff(id: string) {
     try {
       const diff = await api.historyDiff(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't load diff", message: errorMessage(err) } });
     }
@@ -472,7 +503,7 @@ export default function App() {
   async function handleRequestRestore(id: string) {
     try {
       const diff = await api.previewRestore(id);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id, pendingDeleteId: null });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: id, pendingDeleteId: null, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview restore", message: errorMessage(err) } });
     }
@@ -481,14 +512,23 @@ export default function App() {
   async function handleRequestDelete(entryId: string) {
     try {
       const diff = await api.previewDelete(entryId);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: entryId });
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: entryId, pendingRawSave: null });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview delete", message: errorMessage(err) } });
     }
   }
 
+  async function handleRequestRawSave(content: string) {
+    try {
+      const diff = await api.previewRawSave(content);
+      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: null, pendingRestoreId: null, pendingDeleteId: null, pendingRawSave: content });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
+    }
+  }
+
   async function handleConfirmDiff() {
-    const { diff, pendingDraft, pendingRestoreId, pendingDeleteId } = state;
+    const { diff, pendingDraft, pendingRestoreId, pendingDeleteId, pendingRawSave } = state;
     if (!diff) return;
     try {
       if (diff.mode === "save" && pendingDraft) {
@@ -513,6 +553,14 @@ export default function App() {
         await refreshHistory();
         refreshHelperStatus().catch(() => {});
         dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Entry deleted", message: `${hostname} has been removed from the hosts file.` } });
+      } else if (diff.mode === "raw" && pendingRawSave !== null) {
+        await api.confirmRawSave(pendingRawSave);
+        dispatch({ type: "SET_RAW_FILE_CONTENT", content: pendingRawSave });
+        dispatch({ type: "CLOSE_DIFF" });
+        await refreshEntries();
+        await refreshHistory();
+        refreshHelperStatus().catch(() => {});
+        dispatch({ type: "SET_TOAST", toast: { type: "success", title: "Hosts file saved", message: "Your changes have been written to the hosts file." } });
       } else {
         dispatch({ type: "CLOSE_DIFF" });
       }
@@ -627,6 +675,7 @@ export default function App() {
           view={state.view}
           onGoList={() => dispatch({ type: "GO_LIST" })}
           onGoHistory={() => dispatch({ type: "GO_HISTORY" })}
+          onGoRaw={() => dispatch({ type: "GO_RAW" })}
           entryCount={state.entries.length}
           groups={groups}
           groupFilter={state.groupFilter}
@@ -651,8 +700,17 @@ export default function App() {
             onEdit={(entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry })}
             onSwitchIp={handleSwitchIp}
           />
-        ) : (
+        ) : state.view === "history" ? (
           <HistoryView c={c} history={state.history} onViewDiff={handleViewHistoryDiff} onRestore={handleRequestRestore} />
+        ) : (
+          <RawEditorView
+            c={c}
+            content={state.rawDraftContent ?? ""}
+            baseline={state.rawFileContent ?? ""}
+            disabled={state.externalChangeDetected}
+            onChange={(content) => dispatch({ type: "SET_RAW_DRAFT_CONTENT", content })}
+            onRequestSave={handleRequestRawSave}
+          />
         )}
       </div>
 
