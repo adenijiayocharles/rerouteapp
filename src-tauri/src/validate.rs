@@ -38,6 +38,19 @@ pub fn is_shadow_domain(hostname: &str) -> bool {
     SHADOW_DOMAINS.contains(&lower.as_str())
 }
 
+/// Splits user-entered hostname input into individual hostname tokens.
+/// Accepts commas and/or whitespace as separators, so both
+/// "foo.local, bar.local" and "foo.local bar.local" (the literal hosts
+/// file syntax for one IP with multiple hostnames) work as input.
+pub fn split_hostnames(input: &str) -> Vec<String> {
+    input
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +109,20 @@ mod tests {
         assert!(is_shadow_domain("LocalHost"));
         assert!(is_shadow_domain("broadcasthost"));
         assert!(!is_shadow_domain("api.myapp.local"));
+    }
+
+    #[test]
+    fn split_hostnames_accepts_commas_and_whitespace() {
+        assert_eq!(
+            split_hostnames("foo.local, bar.local,baz.local"),
+            vec!["foo.local", "bar.local", "baz.local"]
+        );
+        assert_eq!(
+            split_hostnames("foo.local bar.local"),
+            vec!["foo.local", "bar.local"]
+        );
+        assert_eq!(split_hostnames("  foo.local  "), vec!["foo.local"]);
+        assert_eq!(split_hostnames(""), Vec::<String>::new());
+        assert_eq!(split_hostnames(" , , "), Vec::<String>::new());
     }
 }

@@ -24,13 +24,23 @@ pub struct WriteResult {
     pub flush_message: Option<String>,
 }
 
+/// Rewrites the draft's hostname field to its canonical form: individual
+/// hostnames (however the user separated them — commas, whitespace, or the
+/// hosts file's native space-separated syntax) joined by a single space,
+/// which is exactly what a hosts file line looks like on disk.
+fn normalize_draft_hostname(draft: &mut EntryDraft) {
+    draft.hostname = validate::split_hostnames(&draft.hostname).join(" ");
+}
+
 fn validate_draft(draft: &EntryDraft) -> Result<(), String> {
-    let hostname = draft.hostname.trim();
-    if hostname.is_empty() {
+    let hostnames = validate::split_hostnames(&draft.hostname);
+    if hostnames.is_empty() {
         return Err("Hostname is required.".to_string());
     }
-    if !validate::is_valid_hostname(hostname) {
-        return Err(format!("\u{201c}{hostname}\u{201d} is not a valid hostname."));
+    for hostname in &hostnames {
+        if !validate::is_valid_hostname(hostname) {
+            return Err(format!("\u{201c}{hostname}\u{201d} is not a valid hostname."));
+        }
     }
     if draft.ips.is_empty() {
         return Err("At least one IP address is required.".to_string());
@@ -179,14 +189,17 @@ pub fn get_history(state: State<AppState>) -> Result<Vec<HistoryEntry>, String> 
 
 #[tauri::command]
 pub fn is_shadow_domain(hostname: String) -> bool {
-    validate::is_shadow_domain(&hostname)
+    validate::split_hostnames(&hostname)
+        .iter()
+        .any(|h| validate::is_shadow_domain(h))
 }
 
 /// Computes the diff to show in the confirmation modal without writing
 /// anything. The frontend calls `confirm_save` with the same draft once
 /// the user approves.
 #[tauri::command]
-pub fn preview_save(state: State<AppState>, draft: EntryDraft) -> Result<DiffPreview, String> {
+pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<DiffPreview, String> {
+    normalize_draft_hostname(&mut draft);
     validate_draft(&draft)?;
     let conn = state.conn.lock().unwrap();
     let is_new = draft.id.is_none();
@@ -219,7 +232,8 @@ pub fn preview_save(state: State<AppState>, draft: EntryDraft) -> Result<DiffPre
 }
 
 #[tauri::command]
-pub fn confirm_save(app: AppHandle, state: State<AppState>, draft: EntryDraft) -> Result<WriteResult, String> {
+pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraft) -> Result<WriteResult, String> {
+    normalize_draft_hostname(&mut draft);
     validate_draft(&draft)?;
     let is_new = draft.id.is_none();
 

@@ -543,12 +543,13 @@ export default function App() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
         display: "flex",
         flexDirection: "column",
         background: c.bg,
         color: c.text,
-        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        fontFamily: "'Space Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        fontSize: 14,
         transition: "background .25s ease",
         position: "relative",
         overflow: "hidden",

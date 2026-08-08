@@ -96,9 +96,12 @@ export function DraftPanel({
             <input
               value={draft.hostname}
               onChange={(e) => onFieldChange("hostname", e.target.value)}
-              placeholder="api.myapp.local"
+              placeholder="api.myapp.local, admin.myapp.local"
               style={inputStyle(c, true)}
             />
+            <div style={{ fontSize: 11.5, color: c.textFaint, marginTop: 6 }}>
+              Separate multiple hostnames with commas or spaces to point them all at the same IP.
+            </div>
           </Field>
 
           <div>

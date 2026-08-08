@@ -70,7 +70,7 @@ export function SettingsModal({
           borderRadius: 14,
           boxShadow: c.popShadow,
           zIndex: 71,
-          animation: "hm-pop-in .16s ease",
+          animation: "hm-pop-in-centered .16s ease",
           overflow: "hidden",
         }}
       >

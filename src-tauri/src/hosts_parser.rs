@@ -109,7 +109,13 @@ fn parse_managed_line(raw: &str) -> Option<ParsedManagedLine> {
     };
     let mut parts = main.split_whitespace();
     let ip = parts.next()?.to_string();
-    let hostname = parts.next()?.to_string();
+    // A line can list multiple hostnames for the same IP (standard hosts
+    // file syntax); keep them all, space-joined, rather than just the first.
+    let hostname_tokens: Vec<&str> = parts.collect();
+    if hostname_tokens.is_empty() {
+        return None;
+    }
+    let hostname = hostname_tokens.join(" ");
     Some(ParsedManagedLine {
         enabled,
         ip,
@@ -263,6 +269,12 @@ mod tests {
     }
 
     #[test]
+    fn build_line_writes_multiple_space_separated_hostnames() {
+        let line = build_line(&entry("e1", "api.myapp.local admin.myapp.local", "127.0.0.1", true, ""));
+        assert_eq!(line, "127.0.0.1\tapi.myapp.local admin.myapp.local");
+    }
+
+    #[test]
     fn managed_block_round_trips_with_unmanaged_lines_untouched() {
         let original = format!(
             "# top comment\n127.0.0.1\tlocalhost\n\n{}\n10.0.0.5\told.host    # stale\n{}\n\n# bottom comment\n",
@@ -308,6 +320,18 @@ mod tests {
         assert!(parsed[0].enabled);
         assert_eq!(parsed[1].hostname, "disabled.local");
         assert!(!parsed[1].enabled);
+    }
+
+    #[test]
+    fn parses_multiple_hostnames_on_one_line() {
+        let original = format!(
+            "{}\n127.0.0.1\tapi.local admin.local    # note\n{}\n",
+            START_MARKER, END_MARKER
+        );
+        let parsed = parse_managed_block(&original);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].hostname, "api.local admin.local");
+        assert_eq!(parsed[0].comment, "note");
     }
 
     #[test]

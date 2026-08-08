@@ -30,6 +30,7 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <div
+      className="hm-scroll"
       style={{
         width: 200,
         flex: "none",
@@ -39,6 +40,7 @@ export function Sidebar({
         display: "flex",
         flexDirection: "column",
         gap: 2,
+        overflow: "auto",
         transition: "background .25s ease,border-color .25s ease",
       }}
     >

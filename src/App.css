@@ -44,6 +44,21 @@ body,
   }
 }
 
+/* Same pop-in effect, but for panels centered via `translate(-50%,-50%)` —
+   keyframe `transform` replaces the base transform outright rather than
+   composing with it, so the centering offset has to be baked in here too,
+   otherwise the panel briefly renders unanchored before snapping to center. */
+@keyframes hm-pop-in-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(0);
+  }
+}
+
 @keyframes hm-toast-in {
   from {
     opacity: 0;
