@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="roundedSquare">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"></rect>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#roundedSquare)">
+    <rect x="0" y="0" width="1024" height="1024" fill="#8285F7"></rect>
+
+    <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+
+      <circle cx="270" cy="512" r="70" stroke-width="34"></circle>
+
+      <path d="M 420 512 L 610 512" stroke-width="34"></path>
+      <path d="M 560 430 L 650 512 L 560 594" stroke-width="34"></path>
+
+      <circle cx="770" cy="512" r="70" fill="#FFFFFF" stroke="none"></circle>
+    </g>
+  </g>
+</svg>
