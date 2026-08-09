@@ -40,6 +40,17 @@ if [ "$built" != "$dest" ]; then
   cp "$built" "$dest"
 fi
 
+# Tauri's bundler signs the main executable and the outer .app bundle, but
+# never touches resource files dropped in Contents/Resources — reroute-helper
+# would otherwise ship with cargo's bare ad-hoc signature (no hardened
+# runtime, no secure timestamp), which fails notarization once it's staged
+# as a bundle resource. Sign it ourselves whenever a Developer ID identity is
+# available (set by the release workflow); local dev builds have no identity
+# and skip this, same as before.
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  codesign --force --options runtime --timestamp -s "$APPLE_SIGNING_IDENTITY" "$dest"
+fi
+
 # tauri.conf.json's `bundle.resources` always points at the release path,
 # and tauri-build validates that the resource exists even for dev builds.
 # Keep a copy there during dev so `tauri dev` (debug profile) doesn't fail;
