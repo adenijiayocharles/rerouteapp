@@ -48,6 +48,27 @@ fi
 # available (set by the release workflow); local dev builds have no identity
 # and skip this, same as before.
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  # On CI the cert only lives in APPLE_CERTIFICATE (base64 .p12) — the
+  # release workflow's own keychain import happens later, inside
+  # tauri-action's signing step, which runs after this beforeBuildCommand.
+  # Import it into a throwaway keychain ourselves so codesign can find the
+  # identity now. On a dev machine the identity is already in the login
+  # keychain and APPLE_CERTIFICATE is unset, so this import is skipped.
+  if [ -n "${APPLE_CERTIFICATE:-}" ] && ! security find-identity -v -p codesigning | grep -qF "$APPLE_SIGNING_IDENTITY"; then
+    signing_keychain="${RUNNER_TEMP:-$(mktemp -d)}/reroute-helper-signing.keychain-db"
+    keychain_password="$(openssl rand -base64 24)"
+    cert_path="$(mktemp).p12"
+    trap 'rm -f "$cert_path"' EXIT
+
+    echo "$APPLE_CERTIFICATE" | base64 --decode >"$cert_path"
+    security create-keychain -p "$keychain_password" "$signing_keychain"
+    security set-keychain-settings -lut 21600 "$signing_keychain"
+    security unlock-keychain -p "$keychain_password" "$signing_keychain"
+    security import "$cert_path" -k "$signing_keychain" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$signing_keychain"
+    security list-keychains -d user -s "$signing_keychain" $(security list-keychains -d user | tr -d '"')
+  fi
+
   codesign --force --options runtime --timestamp -s "$APPLE_SIGNING_IDENTITY" "$dest"
 fi
 
