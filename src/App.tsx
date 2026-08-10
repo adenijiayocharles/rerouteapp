@@ -790,15 +790,22 @@ export default function App() {
         await performConfirmSave(pendingDraft, diff.isNew);
         dispatch({ type: "CLOSE_DIFF_AND_DRAFT" });
       } else if (diff.mode === "adopt" && pendingAdoptId) {
-        const result = await api.confirmAdopt(pendingAdoptId);
-        if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+        const adopted = await api.confirmAdopt(pendingAdoptId);
+        for (const entry of adopted) dispatch({ type: "UPSERT_ENTRY", entry });
         dispatch({ type: "CLOSE_DIFF" });
         await refreshUnmanagedEntries();
         await refreshHistory();
         refreshHelperStatus().catch(() => {});
         dispatch({
           type: "SET_TOAST",
-          toast: { type: "success", title: "Entry adopted", message: `${result.entry?.hostname ?? "The entry"} is now managed by Reroute.` },
+          toast: {
+            type: "success",
+            title: adopted.length === 1 ? "Entry adopted" : "Entries adopted",
+            message:
+              adopted.length === 1
+                ? `${adopted[0]?.hostname ?? "The entry"} is now managed by Reroute.`
+                : `${adopted.length} entries are now managed by Reroute.`,
+          },
         });
       } else if (diff.mode === "restore" && pendingRestoreId) {
         const result = await api.confirmRestore(pendingRestoreId);

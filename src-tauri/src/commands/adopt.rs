@@ -3,7 +3,7 @@
 
 use tauri::{AppHandle, State};
 
-use super::{draft_to_entry, prune_history, write_content_to_hosts_file, WriteResult};
+use super::{draft_to_entry, prune_history, write_content_to_hosts_file};
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft};
 use crate::state::AppState;
@@ -27,25 +27,41 @@ fn find_unmanaged_entry(content: &str, id: &str) -> Result<hosts_parser::Unmanag
         .ok_or_else(|| "That entry is no longer available to adopt \u{2014} reload and try again.".to_string())
 }
 
-fn draft_for_unmanaged(unmanaged: &hosts_parser::UnmanagedEntry) -> EntryDraft {
-    // `ip.uid` becomes the `ip_candidates` table's primary key, which is
-    // keyed table-wide (not scoped per entry) — it must be unique across
-    // every adopted entry, not just within this one, or adopting a second
-    // entry in the same session collides on insert.
-    let uid = uuid::Uuid::new_v4().to_string();
-    EntryDraft {
-        id: None,
-        hostname: unmanaged.hostname.clone(),
-        comment: unmanaged.comment.clone(),
-        group: String::new(),
-        enabled: true,
-        active_uid: uid.clone(),
-        ips: vec![crate::models::IpDraft {
-            uid,
-            label: "Imported".to_string(),
-            ip: unmanaged.ip.clone(),
-        }],
-    }
+/// Builds one draft per hostname on the unmanaged line: `UnmanagedEntry.hostname`
+/// is already normalized (by `parse_unmanaged_line`) to a space-joined list,
+/// regardless of whether the original line used spaces, commas, or both, so
+/// splitting it back apart here turns `1.2.3.4 a,b c` into three entries that
+/// each keep the line's original IP and comment. When a line names more than
+/// one hostname, the resulting entries are also put in a shared group —
+/// named after the IP they came from — so the split-out entries stay
+/// visibly related (and filterable) via the sidebar's group list instead of
+/// scattering into the ungrouped list.
+fn drafts_for_unmanaged(unmanaged: &hosts_parser::UnmanagedEntry) -> Vec<EntryDraft> {
+    let hostnames = validate::split_hostnames(&unmanaged.hostname);
+    let group = if hostnames.len() > 1 { unmanaged.ip.clone() } else { String::new() };
+    hostnames
+        .into_iter()
+        .map(|hostname| {
+            // `ip.uid` becomes the `ip_candidates` table's primary key, which is
+            // keyed table-wide (not scoped per entry) — it must be unique across
+            // every adopted entry, not just within this one, or adopting a second
+            // entry in the same session collides on insert.
+            let uid = uuid::Uuid::new_v4().to_string();
+            EntryDraft {
+                id: None,
+                hostname,
+                comment: unmanaged.comment.clone(),
+                group: group.clone(),
+                enabled: true,
+                active_uid: uid.clone(),
+                ips: vec![crate::models::IpDraft {
+                    uid,
+                    label: "Imported".to_string(),
+                    ip: unmanaged.ip.clone(),
+                }],
+            }
+        })
+        .collect()
 }
 
 /// Preview for moving an unmanaged entry into the app-managed block. Reads
@@ -54,18 +70,29 @@ fn draft_for_unmanaged(unmanaged: &hosts_parser::UnmanagedEntry) -> EntryDraft {
 pub fn preview_adopt(state: State<AppState>, id: String) -> Result<DiffPreview, String> {
     let content = std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))?;
     let unmanaged = find_unmanaged_entry(&content, &id)?;
-    let draft = draft_for_unmanaged(&unmanaged);
-    let after = draft_to_entry("pending", &draft);
+    let drafts = drafts_for_unmanaged(&unmanaged);
+    let after_entries: Vec<Entry> = drafts.iter().map(|d| draft_to_entry("pending", d)).collect();
+    let after_lines: Vec<String> = after_entries.iter().map(hosts_parser::build_line).collect();
+
+    let title = match after_entries.as_slice() {
+        [only] => format!("Adopt \u{201c}{}\u{201d}", only.hostname),
+        many => format!("Adopt {} entries", many.len()),
+    };
+    let subtitle = if after_entries.len() > 1 {
+        "Move these entries from outside the managed block into Reroute, one hostname per line.".to_string()
+    } else {
+        "Move this entry from outside the managed block into Reroute.".to_string()
+    };
 
     Ok(DiffPreview {
         mode: "adopt".to_string(),
         is_new: true,
         is_removal: false,
-        title: format!("Adopt \u{201c}{}\u{201d}", after.hostname),
-        subtitle: "Move this entry from outside the managed block into Reroute.".to_string(),
+        title,
+        subtitle,
         before_line: None,
-        after_line: Some(hosts_parser::build_line(&after)),
-        is_shadow_domain: validate::is_shadow_domain(&after.hostname),
+        after_line: Some(after_lines.join("\n")),
+        is_shadow_domain: after_entries.iter().any(|e| validate::is_shadow_domain(&e.hostname)),
         restore_target_id: None,
         history_before: None,
         history_after: None,
@@ -74,12 +101,13 @@ pub fn preview_adopt(state: State<AppState>, id: String) -> Result<DiffPreview, 
     })
 }
 
-/// Moves an unmanaged entry into the app-managed block in one write:
-/// inserts it as a new DB entry, removes its original raw line, and
-/// regenerates the hosts file. Re-verifies the line still matches what was
-/// listed before removing it, in case the file changed out from under us.
+/// Moves an unmanaged entry into the app-managed block in one write: splits
+/// it into one DB entry per hostname (space/comma-separated lines adopt as
+/// several entries sharing the original IP), removes the original raw line,
+/// and regenerates the hosts file. Re-verifies the line still matches what
+/// was listed before removing it, in case the file changed out from under us.
 #[tauri::command]
-pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Result<WriteResult, String> {
+pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Result<Vec<Entry>, String> {
     let mut conn = state.conn.lock().unwrap();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -90,8 +118,11 @@ pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Resu
         .parse()
         .map_err(|_| "Invalid unmanaged entry id.".to_string())?;
 
-    let draft = draft_for_unmanaged(&unmanaged);
-    let after_entry = store::insert_entry(&tx, &draft).map_err(|e| e.to_string())?;
+    let drafts = drafts_for_unmanaged(&unmanaged);
+    let mut after_entries = Vec::with_capacity(drafts.len());
+    for draft in &drafts {
+        after_entries.push(store::insert_entry(&tx, draft).map_err(|e| e.to_string())?);
+    }
     let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
     let parsed = hosts_parser::remove_unmanaged_line(
@@ -109,25 +140,15 @@ pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Resu
         return Err("Failed to write the hosts file.".to_string());
     }
 
-    store::insert_history(
-        &tx,
-        &after_entry.hostname,
-        "Adopted entry",
-        Some(&after_entry.id),
-        None,
-        Some(&after_entry),
-        Some(&backup_path),
-    )
-    .map_err(|e| e.to_string())?;
+    for entry in &after_entries {
+        store::insert_history(&tx, &entry.hostname, "Adopted entry", Some(&entry.id), None, Some(entry), Some(&backup_path))
+            .map_err(|e| e.to_string())?;
+    }
     prune_history(&tx)?;
     tx.commit().map_err(|e| e.to_string())?;
     crate::tray::sync(&app, &entries);
 
-    Ok(WriteResult {
-        entry: Some(after_entry),
-        flush_ok: None,
-        flush_message: None,
-    })
+    Ok(after_entries)
 }
 
 /// Moves several unmanaged entries into the app-managed block in a single
@@ -158,12 +179,17 @@ pub fn confirm_adopt_many(app: AppHandle, state: State<AppState>, ids: Vec<Strin
     // original absolute index, or later indices would drift.
     let pre_adopt_entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
-    // Insert in the order the caller selected them; the resulting order_index
-    // (and therefore hosts-file position) reflects that.
-    let mut after_entries = Vec::with_capacity(resolved.len());
-    for unmanaged in &resolved {
-        let draft = draft_for_unmanaged(unmanaged);
-        after_entries.push(store::insert_entry(&tx, &draft).map_err(|e| e.to_string())?);
+    // Split each selected line into one draft per hostname, then group the
+    // whole batch by IP address (stable sort, so within an IP group the
+    // caller's selection order — and a split line's original hostname
+    // order — is preserved) before inserting. The resulting order_index
+    // (and therefore hosts-file position) reflects that grouping.
+    let mut drafts: Vec<EntryDraft> = resolved.iter().flat_map(drafts_for_unmanaged).collect();
+    drafts.sort_by(|a, b| a.ips[0].ip.cmp(&b.ips[0].ip));
+
+    let mut after_entries = Vec::with_capacity(drafts.len());
+    for draft in &drafts {
+        after_entries.push(store::insert_entry(&tx, draft).map_err(|e| e.to_string())?);
     }
 
     // Remove highest line index first so removing one line never shifts the
@@ -197,4 +223,49 @@ pub fn confirm_adopt_many(app: AppHandle, state: State<AppState>, ids: Vec<Strin
     crate::tray::sync(&app, &final_entries);
 
     Ok(after_entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unmanaged(hostname: &str) -> hosts_parser::UnmanagedEntry {
+        hosts_parser::UnmanagedEntry {
+            id: "0".to_string(),
+            ip: "10.0.0.1".to_string(),
+            hostname: hostname.to_string(),
+            comment: "note".to_string(),
+        }
+    }
+
+    #[test]
+    fn splits_a_multi_hostname_line_into_one_draft_per_hostname() {
+        let drafts = drafts_for_unmanaged(&unmanaged("api.local admin.local mail.local"));
+        assert_eq!(drafts.len(), 3);
+        assert_eq!(drafts[0].hostname, "api.local");
+        assert_eq!(drafts[1].hostname, "admin.local");
+        assert_eq!(drafts[2].hostname, "mail.local");
+        for d in &drafts {
+            assert_eq!(d.ips.len(), 1);
+            assert_eq!(d.ips[0].ip, "10.0.0.1");
+            assert_eq!(d.comment, "note");
+            // Split from the same multi-hostname line: grouped by the shared
+            // IP so they show up together in the sidebar's group list.
+            assert_eq!(d.group, "10.0.0.1");
+        }
+    }
+
+    #[test]
+    fn single_hostname_line_produces_exactly_one_ungrouped_draft() {
+        let drafts = drafts_for_unmanaged(&unmanaged("api.local"));
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].hostname, "api.local");
+        assert_eq!(drafts[0].group, "");
+    }
+
+    #[test]
+    fn drafts_from_one_line_get_distinct_ip_candidate_uids() {
+        let drafts = drafts_for_unmanaged(&unmanaged("api.local admin.local"));
+        assert_ne!(drafts[0].active_uid, drafts[1].active_uid);
+    }
 }

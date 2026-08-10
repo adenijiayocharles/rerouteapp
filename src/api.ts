@@ -35,7 +35,7 @@ export const api = {
 
   listUnmanagedEntries: () => invoke<UnmanagedEntry[]>("list_unmanaged_entries"),
   previewAdopt: (id: string) => invoke<DiffPreview>("preview_adopt", { id }),
-  confirmAdopt: (id: string) => invoke<WriteResult>("confirm_adopt", { id }),
+  confirmAdopt: (id: string) => invoke<Entry[]>("confirm_adopt", { id }),
   confirmAdoptMany: (ids: string[]) => invoke<Entry[]>("confirm_adopt_many", { ids }),
 
   readHostsFile: () => invoke<string>("read_hosts_file"),

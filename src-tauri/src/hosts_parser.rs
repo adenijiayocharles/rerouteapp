@@ -183,7 +183,11 @@ fn parse_unmanaged_line(raw: &str) -> Option<(String, String, String)> {
     if !validate::is_valid_ip(&ip) {
         return None;
     }
-    let hostname_tokens: Vec<&str> = parts.collect();
+    // Hostnames may be separated by whitespace, commas, or both (e.g. tools
+    // that emit `1.2.3.4 a,b,c` or `1.2.3.4 a, b, c`); normalize either form
+    // to the same space-joined representation `parse_managed_line` uses.
+    let rest = parts.collect::<Vec<_>>().join(" ");
+    let hostname_tokens = validate::split_hostnames(&rest);
     if hostname_tokens.is_empty() || hostname_tokens.iter().any(|h| !validate::is_valid_hostname(h)) {
         return None;
     }
@@ -479,6 +483,14 @@ mod tests {
         assert_eq!(unmanaged.len(), 1);
         assert_eq!(unmanaged[0].hostname, "avionexus.test");
         assert_eq!(unmanaged[0].ip, "127.0.0.1");
+    }
+
+    #[test]
+    fn normalizes_comma_separated_unmanaged_hostnames_to_space_joined() {
+        let original = "127.0.0.1\tapi.local,admin.local, mail.local\n";
+        let unmanaged = list_unmanaged_entries(original);
+        assert_eq!(unmanaged.len(), 1);
+        assert_eq!(unmanaged[0].hostname, "api.local admin.local mail.local");
     }
 
     #[test]
