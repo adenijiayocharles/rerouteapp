@@ -671,14 +671,21 @@ export default function App() {
     if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
     await refreshHistory();
     refreshHelperStatus().catch(() => {});
-    dispatch({
-      type: "SET_TOAST",
-      toast: {
-        type: "success",
-        title: isNew ? "Entry added" : "Entry saved",
-        message: `${result.entry?.hostname ?? ""} has been written to the hosts file.`,
-      },
-    });
+    if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
+      dispatch({
+        type: "SET_TOAST",
+        toast: { type: "error", title: "DNS flush failed", message: result.flushMessage ?? "The DNS cache could not be flushed.", retryFlush: true },
+      });
+    } else {
+      dispatch({
+        type: "SET_TOAST",
+        toast: {
+          type: "success",
+          title: isNew ? "Entry added" : "Entry saved",
+          message: `${result.entry?.hostname ?? ""} has been written to the hosts file.`,
+        },
+      });
+    }
   }
 
   async function handleRequestSave() {

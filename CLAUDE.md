@@ -85,21 +85,7 @@ imported into the DB instead of being silently discarded (`store::seed_from_exis
 from `lib.rs::run`). Lines outside the managed block are separately surfaced as "unmanaged entries"
 (`commands/adopt.rs`) that the user can adopt into the managed set via the onboarding flow.
 
-### Command surface (`src-tauri/src/commands/`)
-
-Split by concern; `commands.rs` itself holds only what's shared across more than one submodule (the write
-pipeline above, draft validation/conversion, history pruning):
-- `entries.rs` — CRUD for managed entries: add/edit, switch active IP, enable/disable, restore, delete.
-- `adopt.rs` — list/adopt hosts-file lines outside the managed block.
-- `raw_save.rs` — the raw-editor view's read/preview/lint/save + reconciliation back into structured entries.
-- `dns.rs` — standalone "Flush DNS now".
-- `helper.rs` — helper daemon lifecycle (status/install/uninstall/enabled toggle).
-- `settings.rs` — generic key/value settings-table accessors.
-
-Mutating flows follow a **preview → confirm** pattern end to end: `preview_*` commands compute a `DiffPreview`
-(before/after line, shadow-domain warning, lint diagnostics) against `read_conn` with no side effects; the
-frontend shows it in `DiffModal`; only `confirm_*` (against `conn`, inside a transaction) actually writes and
-records history. Never collapse these into a single command — the confirmation UI depends on the split.
+See `src-tauri/src/commands/CLAUDE.md` for the command-surface split and the preview → confirm pattern.
 
 ### State (`state.rs`)
 
@@ -123,10 +109,4 @@ handler is picked from `pending*` when the modal confirms.
 
 ### Signing/notarization and release
 
-`.github/workflows/release-macos.yml` builds, signs, and notarizes for both `aarch64`/`x86_64` on a `v*` tag.
-`scripts/build-helper.sh` cross-compiles `reroute-helper` for whichever target Tauri's CLI is building
-(`TAURI_ENV_TARGET_TRIPLE`) and stages it where `tauri.conf.json`'s `bundle.resources` expects it — the helper
-binary needs the *same* Developer ID signature as the app since it runs standalone (outside the app bundle,
-as root) once installed. The app isn't sandboxed (writes `/etc/hosts`, installs a LaunchDaemon), so it ships
-only via Developer ID direct distribution, not the Mac App Store. See `README.md` for the required repo
-secrets.
+See the `release` skill for the signing/notarization/CI workflow.

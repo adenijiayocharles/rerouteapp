@@ -92,10 +92,7 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
     };
     let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
-    // Matches the approved design mockup: add/edit saves through the diff
-    // modal don't trigger a DNS flush (only an explicit active-IP switch
-    // does, per spec Step 3 and the mockup's switchIp handler).
-    let do_flush = false;
+    let do_flush = auto_flush_dns_enabled(&tx); // Settings page toggle, on by default
     let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;
     if !outcome.write_ok {
         // tx drops here without being committed, rolling back the DB
@@ -117,10 +114,17 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
     tx.commit().map_err(|e| e.to_string())?;
     crate::tray::sync(&app, &entries);
 
+    let active_ip = after_entry
+        .ips
+        .iter()
+        .find(|ip| ip.id == after_entry.active_ip_id)
+        .map(|ip| ip.ip.as_str())
+        .unwrap_or("");
+    let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, active_ip);
     Ok(WriteResult {
         entry: Some(after_entry),
-        flush_ok: None,
-        flush_message: None,
+        flush_ok: outcome.flush_ok,
+        flush_message,
     })
 }
 

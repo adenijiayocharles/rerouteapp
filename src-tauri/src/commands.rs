@@ -31,9 +31,10 @@ pub mod raw_save;
 pub mod settings;
 
 /// Result of any command that writes the hosts file. `flush_ok` is `None`
-/// when no flush was attempted for this action (e.g. a plain edit);
-/// `flush_message` is populated whenever the flush didn't cleanly succeed,
-/// so the frontend can show the mockup's "Retry DNS flush" affordance.
+/// when no flush was attempted for this action (e.g. toggling an entry's
+/// enabled state); `flush_message` is populated whenever the flush didn't
+/// cleanly succeed, so the frontend can show the mockup's "Retry DNS flush"
+/// affordance.
 #[derive(Serialize, Clone)]
 pub struct WriteResult {
     pub entry: Option<Entry>,
