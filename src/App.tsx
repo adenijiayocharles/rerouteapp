@@ -910,6 +910,7 @@ export default function App() {
   const handleClearGroupFilter = useCallback(() => dispatch({ type: "CLEAR_GROUP_FILTER" }), []);
   const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
   const handleOpenEditPanel = useCallback((entry: Entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry }), []);
+  const handleDeleteFromRow = useCallback((entryId: string) => handleRequestDelete(entryId), []);
 
   return (
     <div
@@ -976,6 +977,7 @@ export default function App() {
             onToggleDropdown={handleToggleIpMenu}
             onToggleEnabled={handleToggleEnabled}
             onEdit={handleOpenEditPanel}
+            onDelete={handleDeleteFromRow}
             onSwitchIp={handleSwitchIp}
             onAdopt={handleRequestAdopt}
           />

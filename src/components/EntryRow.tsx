@@ -1,7 +1,7 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
-import { CheckIcon, ChevronDownIcon, EditIcon, Spinner } from "./icons";
+import { CheckIcon, ChevronDownIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon } from "./icons";
 
 interface EntryRowProps {
   c: ColorTokens;
@@ -12,6 +12,7 @@ interface EntryRowProps {
   onToggleDropdown: (entryId: string) => void;
   onToggleEnabled: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
+  onDelete: (entryId: string) => void;
   onSwitchIp: (entryId: string, ipId: string) => void;
 }
 
@@ -34,6 +35,7 @@ export const EntryRow = memo(function EntryRow({
   onToggleDropdown,
   onToggleEnabled,
   onEdit,
+  onDelete,
   onSwitchIp,
 }: EntryRowProps) {
   const activeIp = entry.ips.find((i) => i.id === entry.activeIpId) ?? entry.ips[0];
@@ -50,6 +52,20 @@ export const EntryRow = memo(function EntryRow({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isDropdownOpen, entryId, onToggleDropdown]);
+
+  const [isMenuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isMenuOpen]);
 
   return (
     <div
@@ -230,17 +246,17 @@ export const EntryRow = memo(function EntryRow({
         {entry.comment || "—"}
       </div>
       <div style={{ fontSize: 11.5, color: c.textFaint }}>{entry.lastModified}</div>
-      <div>
+      <div style={{ position: "relative" }} ref={menuRef}>
         <button
-          onClick={() => onEdit(entry)}
+          onClick={() => setMenuOpen((open) => !open)}
           disabled={disabled}
-          title="Edit"
+          title="More actions"
           style={{
             width: 28,
             height: 28,
             borderRadius: 7,
             border: "none",
-            background: "transparent",
+            background: isMenuOpen ? c.chipBg : "transparent",
             color: c.textFaint,
             cursor: disabled ? "not-allowed" : "pointer",
             display: "flex",
@@ -248,8 +264,74 @@ export const EntryRow = memo(function EntryRow({
             justifyContent: "center",
           }}
         >
-          <EditIcon />
+          <MoreVerticalIcon />
         </button>
+        {isMenuOpen && (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              right: 0,
+              minWidth: 140,
+              background: c.cardBg,
+              border: `1px solid ${c.border}`,
+              borderRadius: 10,
+              boxShadow: c.popShadow,
+              zIndex: 40,
+              padding: 5,
+              animation: "hm-pop-in .13s ease",
+            }}
+          >
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onEdit(entry);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "8px 9px",
+                borderRadius: 7,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: c.text,
+              }}
+            >
+              <EditIcon size={13} />
+              Edit
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onDelete(entryId);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "8px 9px",
+                borderRadius: 7,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: c.red,
+              }}
+            >
+              <TrashIcon size={13} />
+              Delete
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
