@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ColorTokens } from "../theme";
-import { FileIcon, HistoryIcon, ListIcon } from "./icons";
+import { EditIcon, FileIcon, HistoryIcon, ListIcon } from "./icons";
 
 export interface GroupSummary {
   name: string;
@@ -17,6 +17,7 @@ interface SidebarProps {
   groups: GroupSummary[];
   groupFilter: string | null;
   onSelectGroup: (group: string) => void;
+  onRenameGroup: (oldName: string, newName: string) => void;
 }
 
 export function Sidebar({
@@ -29,6 +30,7 @@ export function Sidebar({
   groups,
   groupFilter,
   onSelectGroup,
+  onRenameGroup,
 }: SidebarProps) {
   return (
     <div
@@ -84,35 +86,16 @@ export function Sidebar({
           >
             Groups
           </div>
-          {groups.map((g) => {
-            const active = groupFilter === g.name;
-            return (
-              <button
-                key={g.name}
-                onClick={() => onSelectGroup(g.name)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  padding: "7px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: active ? c.accentSoft : "transparent",
-                  color: active ? c.accent : c.textMuted,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", flex: "none" }} />
-                {g.name}
-                <span style={{ marginLeft: "auto", fontSize: 11, color: c.textFaint, fontWeight: 600 }}>
-                  {g.count}
-                </span>
-              </button>
-            );
-          })}
+          {groups.map((g) => (
+            <GroupRow
+              key={g.name}
+              c={c}
+              group={g}
+              active={groupFilter === g.name}
+              onSelect={() => onSelectGroup(g.name)}
+              onRename={(newName) => onRenameGroup(g.name, newName)}
+            />
+          ))}
         </>
       )}
 
@@ -165,5 +148,146 @@ function NavButton({
         <span style={{ marginLeft: "auto", fontSize: 11, color: c.textFaint, fontWeight: 600 }}>{trailing}</span>
       )}
     </button>
+  );
+}
+
+function GroupRow({
+  c,
+  group,
+  active,
+  onSelect,
+  onRename,
+}: {
+  c: ColorTokens;
+  group: GroupSummary;
+  active: boolean;
+  onSelect: () => void;
+  onRename: (newName: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(group.name);
+  const [hovered, setHovered] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  // Pick up a rename that landed from elsewhere (or a revert after a failed
+  // save) while this row wasn't mid-edit.
+  useEffect(() => {
+    if (!editing) setValue(group.name);
+  }, [group.name, editing]);
+
+  function commit() {
+    setEditing(false);
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== group.name) {
+      onRename(trimmed);
+    } else {
+      setValue(group.name);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        borderRadius: 8,
+        background: active && !editing ? c.accentSoft : "transparent",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {editing ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 8px", flex: 1, minWidth: 0 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.accent, flex: "none" }} />
+          <input
+            ref={inputRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+                setValue(group.name);
+              }
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 12.5,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              color: c.text,
+              background: c.cardBg,
+              border: `1px solid ${c.accent}`,
+              borderRadius: 6,
+              padding: "3px 6px",
+              outline: "none",
+            }}
+          />
+        </div>
+      ) : (
+        <button
+          onClick={onSelect}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            padding: "7px 10px",
+            borderRadius: 8,
+            border: "none",
+            background: "transparent",
+            color: active ? c.accent : c.textMuted,
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: "pointer",
+            textAlign: "left",
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor", flex: "none" }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.name}</span>
+        </button>
+      )}
+
+      <div style={{ width: 28, flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {editing ? null : hovered ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+            title="Rename group"
+            style={{
+              width: 20,
+              height: 20,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "none",
+              borderRadius: 5,
+              background: "transparent",
+              color: c.textMuted,
+              cursor: "pointer",
+            }}
+          >
+            <EditIcon size={11} />
+          </button>
+        ) : (
+          <span style={{ fontSize: 11, color: c.textFaint, fontWeight: 600 }}>{group.count}</span>
+        )}
+      </div>
+    </div>
   );
 }

@@ -98,6 +98,7 @@ type Action =
   | { type: "SET_RAW_DRAFT_CONTENT"; content: string }
   | { type: "SELECT_GROUP"; group: string }
   | { type: "CLEAR_GROUP_FILTER" }
+  | { type: "RENAME_GROUP_FILTER"; oldName: string; newName: string }
   | { type: "SET_SEARCH"; value: string }
   | { type: "TOGGLE_IP_MENU"; id: string }
   | { type: "CLOSE_IP_MENU" }
@@ -226,6 +227,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, view: "list", trayOpen: false, groupFilter: action.group };
     case "CLEAR_GROUP_FILTER":
       return { ...state, groupFilter: null };
+    case "RENAME_GROUP_FILTER":
+      return state.groupFilter === action.oldName ? { ...state, groupFilter: action.newName } : state;
     case "SET_SEARCH":
       return { ...state, search: action.value };
     case "TOGGLE_IP_MENU":
@@ -769,6 +772,18 @@ export default function App() {
     });
   }
 
+  async function handleRenameGroup(oldName: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) return;
+    try {
+      await api.renameGroup(oldName, trimmed);
+      dispatch({ type: "RENAME_GROUP_FILTER", oldName, newName: trimmed });
+      await refreshEntries();
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't rename group", message: errorMessage(err) } });
+    }
+  }
+
   function handleSkipOnboarding() {
     dispatch({ type: "HIDE_ONBOARDING" });
   }
@@ -965,6 +980,7 @@ export default function App() {
           groups={groups}
           groupFilter={state.groupFilter}
           onSelectGroup={(g) => dispatch({ type: "SELECT_GROUP", group: g })}
+          onRenameGroup={handleRenameGroup}
         />
 
         {state.view === "list" ? (

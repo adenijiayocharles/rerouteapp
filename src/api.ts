@@ -32,6 +32,7 @@ export const api = {
 
   previewDelete: (entryId: string) => invoke<DiffPreview>("preview_delete", { entryId }),
   confirmDelete: (entryId: string) => invoke<WriteResult>("confirm_delete", { entryId }),
+  renameGroup: (oldName: string, newName: string) => invoke<Entry[]>("rename_group", { oldName, newName }),
 
   listUnmanagedEntries: () => invoke<UnmanagedEntry[]>("list_unmanaged_entries"),
   previewAdopt: (id: string) => invoke<DiffPreview>("preview_adopt", { id }),

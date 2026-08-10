@@ -230,6 +230,15 @@ pub fn update_entry(conn: &Connection, id: &str, draft: &EntryDraft) -> rusqlite
     Ok(get_entry(conn, id)?.expect("just updated"))
 }
 
+/// Renames a group across every entry that currently has `old_name`.
+pub fn rename_group(conn: &Connection, old_name: &str, new_name: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE entries SET group_name = ?1, updated_at = ?2 WHERE group_name = ?3",
+        params![new_name, now(), old_name],
+    )?;
+    Ok(())
+}
+
 pub fn delete_entry(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM ip_candidates WHERE entry_id = ?1", params![id])?;
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])?;
@@ -508,5 +517,32 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM ip_candidates", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0);
+    }
+
+    fn draft_in_group(hostname: &str, group: &str) -> EntryDraft {
+        let uid = format!("ip-{hostname}");
+        EntryDraft {
+            id: None,
+            hostname: hostname.to_string(),
+            comment: String::new(),
+            group: group.to_string(),
+            enabled: true,
+            active_uid: uid.clone(),
+            ips: vec![IpDraft { uid, label: "primary".to_string(), ip: "10.0.0.1".to_string() }],
+        }
+    }
+
+    #[test]
+    fn rename_group_updates_every_entry_sharing_the_old_name() {
+        let conn = setup();
+        insert_entry(&conn, &draft_in_group("api.local", "10.0.0.1")).unwrap();
+        insert_entry(&conn, &draft_in_group("admin.local", "10.0.0.1")).unwrap();
+        insert_entry(&conn, &draft_in_group("other.local", "unrelated")).unwrap();
+
+        rename_group(&conn, "10.0.0.1", "Work").unwrap();
+
+        let entries = list_entries(&conn).unwrap();
+        let groups: Vec<&str> = entries.iter().map(|e| e.group.as_str()).collect();
+        assert_eq!(groups, vec!["Work", "Work", "unrelated"]);
     }
 }

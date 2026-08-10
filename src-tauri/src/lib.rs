@@ -89,6 +89,7 @@ pub fn run() {
             commands::entries::confirm_restore,
             commands::entries::preview_delete,
             commands::entries::confirm_delete,
+            commands::entries::rename_group,
             commands::adopt::list_unmanaged_entries,
             commands::adopt::preview_adopt,
             commands::adopt::confirm_adopt,

@@ -33,6 +33,30 @@ pub fn is_shadow_domain(hostname: String) -> bool {
         .any(|h| validate::is_shadow_domain(h))
 }
 
+/// Renames a group across every entry that has it, e.g. editing a group
+/// name inline from the sidebar. Group is UI-only metadata — it's never
+/// written to the hosts file (see `hosts_parser::build_line`) — so this
+/// skips the write pipeline entirely: no backup, no elevation, no history
+/// entry, just a DB update. Still syncs the tray and emits the usual
+/// entries-changed event so every open surface picks up the rename.
+#[tauri::command]
+pub fn rename_group(app: AppHandle, state: State<AppState>, old_name: String, new_name: String) -> Result<Vec<Entry>, String> {
+    let old_name = old_name.trim().to_string();
+    let new_name = new_name.trim().to_string();
+    if new_name.is_empty() {
+        return Err("Group name can\u{2019}t be empty.".to_string());
+    }
+
+    let conn = state.conn.lock().unwrap();
+    if old_name != new_name {
+        store::rename_group(&conn, &old_name, &new_name).map_err(|e| e.to_string())?;
+    }
+    let entries = store::list_entries(&conn).map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
+
+    Ok(entries)
+}
+
 /// Computes the diff to show in the confirmation modal without writing
 /// anything. The frontend calls `confirm_save` with the same draft once
 /// the user approves.
