@@ -12,6 +12,9 @@ interface SettingsModalProps {
   confirmBeforeSave: boolean;
   themePreference: ThemePreference;
   historyRetention: HistoryRetention;
+  appVersion: string | null;
+  autoCheckUpdates: boolean;
+  checkingForUpdates: boolean;
   onClose: () => void;
   onSetHelperEnabled: (enabled: boolean) => void;
   onSetLaunchAtLogin: (enabled: boolean) => void;
@@ -19,6 +22,8 @@ interface SettingsModalProps {
   onSetConfirmBeforeSave: (enabled: boolean) => void;
   onSetThemePreference: (preference: ThemePreference) => void;
   onSetHistoryRetention: (value: HistoryRetention) => void;
+  onSetAutoCheckUpdates: (enabled: boolean) => void;
+  onCheckForUpdatesNow: () => void;
 }
 
 export function SettingsModal({
@@ -30,6 +35,9 @@ export function SettingsModal({
   confirmBeforeSave,
   themePreference,
   historyRetention,
+  appVersion,
+  autoCheckUpdates,
+  checkingForUpdates,
   onClose,
   onSetHelperEnabled,
   onSetLaunchAtLogin,
@@ -37,6 +45,8 @@ export function SettingsModal({
   onSetConfirmBeforeSave,
   onSetThemePreference,
   onSetHistoryRetention,
+  onSetAutoCheckUpdates,
+  onCheckForUpdatesNow,
 }: SettingsModalProps) {
   const [confirmingDisable, setConfirmingDisable] = useState(false);
 
@@ -103,6 +113,41 @@ export function SettingsModal({
             checked={launchAtLogin}
             onToggle={() => onSetLaunchAtLogin(!launchAtLogin)}
           />
+
+          <div style={{ marginTop: 20 }}>
+            <SectionLabel c={c}>Updates</SectionLabel>
+            <ToggleRow
+              c={c}
+              title="Automatically check for updates"
+              description="Check for new versions on startup and periodically while Reroute is running."
+              checked={autoCheckUpdates}
+              onToggle={() => onSetAutoCheckUpdates(!autoCheckUpdates)}
+            />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 14 }}>
+              <div style={{ fontSize: 12.5, color: c.textMuted }}>
+                {appVersion ? `Current version: ${appVersion}` : "Current version unavailable"}
+              </div>
+              <button
+                onClick={onCheckForUpdatesNow}
+                disabled={checkingForUpdates}
+                style={{
+                  height: 30,
+                  padding: "0 12px",
+                  borderRadius: 7,
+                  border: `1px solid ${c.border}`,
+                  background: "transparent",
+                  color: c.text,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: checkingForUpdates ? "default" : "pointer",
+                  opacity: checkingForUpdates ? 0.6 : 1,
+                  flex: "none",
+                }}
+              >
+                {checkingForUpdates ? "Checking…" : "Check for Updates"}
+              </button>
+            </div>
+          </div>
 
           <div style={{ marginTop: 20 }}>
             <SectionLabel c={c}>Behavior</SectionLabel>

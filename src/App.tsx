@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import type { Update } from "@tauri-apps/plugin-updater";
 import "./App.css";
 import { api } from "./api";
 import { colorsFor, type Theme, type ThemePreference } from "./theme";
@@ -19,6 +20,9 @@ import { OnboardingModal } from "./components/OnboardingModal";
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const ENTRIES_CHANGED_EVENT = "entries-changed";
 const THEME_STORAGE_KEY = "reroute-theme";
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "ready" | "error";
 
 function loadStoredThemePreference(): ThemePreference {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -61,6 +65,11 @@ interface State {
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
   historyRetention: HistoryRetention;
+  appVersion: string | null;
+  autoCheckUpdates: boolean;
+  updateStatus: UpdateStatus;
+  updateVersion: string | null;
+  updateProgress: number | null;
 }
 
 type Action =
@@ -77,6 +86,9 @@ type Action =
   | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
   | { type: "SET_CONFIRM_BEFORE_SAVE"; enabled: boolean }
   | { type: "SET_HISTORY_RETENTION"; value: HistoryRetention }
+  | { type: "SET_APP_VERSION"; version: string }
+  | { type: "SET_AUTO_CHECK_UPDATES"; enabled: boolean }
+  | { type: "SET_UPDATE_STATUS"; status: UpdateStatus; version?: string | null; progress?: number | null }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
   | { type: "GO_LIST" }
@@ -150,6 +162,11 @@ const initialState: State = {
   autoFlushDns: true,
   confirmBeforeSave: false,
   historyRetention: "200",
+  appVersion: null,
+  autoCheckUpdates: true,
+  updateStatus: "idle",
+  updateVersion: null,
+  updateProgress: null,
 };
 
 function reducer(state: State, action: Action): State {
@@ -176,6 +193,17 @@ function reducer(state: State, action: Action): State {
       return { ...state, confirmBeforeSave: action.enabled };
     case "SET_HISTORY_RETENTION":
       return { ...state, historyRetention: action.value };
+    case "SET_APP_VERSION":
+      return { ...state, appVersion: action.version };
+    case "SET_AUTO_CHECK_UPDATES":
+      return { ...state, autoCheckUpdates: action.enabled };
+    case "SET_UPDATE_STATUS":
+      return {
+        ...state,
+        updateStatus: action.status,
+        updateVersion: action.version !== undefined ? action.version : state.updateVersion,
+        updateProgress: action.progress !== undefined ? action.progress : state.updateProgress,
+      };
     case "OPEN_SETTINGS":
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
@@ -331,6 +359,11 @@ function errorMessage(err: unknown): string {
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const pendingUpdateRef = useRef<Update | null>(null);
+  const updateStatusRef = useRef<UpdateStatus>(state.updateStatus);
+  useEffect(() => {
+    updateStatusRef.current = state.updateStatus;
+  }, [state.updateStatus]);
   const theme: Theme =
     state.themePreference === "system" ? (state.systemPrefersDark ? "dark" : "light") : state.themePreference;
   const c = colorsFor(theme);
@@ -388,7 +421,21 @@ export default function App() {
     api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
     api.getConfirmBeforeSave().then((enabled) => dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled })).catch(() => {});
     api.getHistoryRetention().then((value) => dispatch({ type: "SET_HISTORY_RETENTION", value })).catch(() => {});
+    api.getAppVersion().then((version) => dispatch({ type: "SET_APP_VERSION", version })).catch(() => {});
+    api.getAutoCheckUpdates().then((enabled) => {
+      dispatch({ type: "SET_AUTO_CHECK_UPDATES", enabled });
+      if (enabled) handleCheckForUpdates(false);
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (state.autoCheckUpdates && updateStatusRef.current === "idle") {
+        handleCheckForUpdates(false);
+      }
+    }, UPDATE_CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [state.autoCheckUpdates]);
 
   async function handleSetHelperEnabled(enabled: boolean) {
     try {
@@ -442,6 +489,105 @@ export default function App() {
       dispatch({ type: "SET_HISTORY_RETENTION", value });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update history retention", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetAutoCheckUpdates(enabled: boolean) {
+    try {
+      await api.setAutoCheckUpdates(enabled);
+      dispatch({ type: "SET_AUTO_CHECK_UPDATES", enabled });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update auto-check setting", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleInstallUpdate() {
+    const update = pendingUpdateRef.current;
+    if (!update) return;
+    try {
+      await update.install();
+      await api.relaunchApp();
+    } catch (err) {
+      dispatch({ type: "SET_UPDATE_STATUS", status: "error" });
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Update install failed", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleDownloadUpdate() {
+    const update = pendingUpdateRef.current;
+    if (!update) return;
+    dispatch({ type: "SET_UPDATE_STATUS", status: "downloading", progress: 0 });
+
+    let contentLength = 0;
+    let downloaded = 0;
+    try {
+      await update.download((event) => {
+        if (event.event === "Started") {
+          contentLength = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          const progress = contentLength > 0 ? Math.min(100, Math.round((downloaded / contentLength) * 100)) : null;
+          dispatch({ type: "SET_UPDATE_STATUS", status: "downloading", progress });
+          dispatch({
+            type: "SET_TOAST",
+            toast: {
+              type: "info",
+              title: "Update available",
+              message: progress !== null ? `Downloading Reroute v${update.version}… ${progress}%` : `Downloading Reroute v${update.version}…`,
+            },
+          });
+        }
+      });
+      dispatch({ type: "SET_UPDATE_STATUS", status: "ready", version: update.version });
+      dispatch({
+        type: "SET_TOAST",
+        toast: {
+          type: "info",
+          title: "Update ready",
+          message: `Restart Reroute to finish installing v${update.version}.`,
+          updateAction: { label: "Restart", onClick: handleInstallUpdate },
+        },
+      });
+    } catch (err) {
+      dispatch({ type: "SET_UPDATE_STATUS", status: "error" });
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Update download failed", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleCheckForUpdates(manual: boolean) {
+    if (manual) dispatch({ type: "SET_UPDATE_STATUS", status: "checking" });
+    try {
+      const update = await api.checkForUpdate();
+      if (!update) {
+        if (manual) {
+          dispatch({
+            type: "SET_TOAST",
+            toast: {
+              type: "success",
+              title: "You're up to date",
+              message: state.appVersion ? `Reroute v${state.appVersion} is the latest version.` : "You have the latest version.",
+            },
+          });
+        }
+        dispatch({ type: "SET_UPDATE_STATUS", status: "idle" });
+        return;
+      }
+      pendingUpdateRef.current = update;
+      dispatch({ type: "SET_UPDATE_STATUS", status: "available", version: update.version });
+      dispatch({
+        type: "SET_TOAST",
+        toast: {
+          type: "info",
+          title: "Update available",
+          message: `Reroute v${update.version} is ready to download.`,
+          updateAction: { label: "Download", onClick: handleDownloadUpdate },
+        },
+      });
+    } catch (err) {
+      if (manual) {
+        dispatch({ type: "SET_UPDATE_STATUS", status: "idle" });
+        dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't check for updates", message: errorMessage(err) } });
+      }
     }
   }
 
@@ -879,6 +1025,9 @@ export default function App() {
           confirmBeforeSave={state.confirmBeforeSave}
           themePreference={state.themePreference}
           historyRetention={state.historyRetention}
+          appVersion={state.appVersion}
+          autoCheckUpdates={state.autoCheckUpdates}
+          checkingForUpdates={state.updateStatus === "checking"}
           onClose={() => dispatch({ type: "CLOSE_SETTINGS" })}
           onSetThemePreference={(preference) => dispatch({ type: "SET_THEME_PREFERENCE", preference })}
           onSetHelperEnabled={handleSetHelperEnabled}
@@ -886,6 +1035,8 @@ export default function App() {
           onSetAutoFlushDns={handleSetAutoFlushDns}
           onSetConfirmBeforeSave={handleSetConfirmBeforeSave}
           onSetHistoryRetention={handleSetHistoryRetention}
+          onSetAutoCheckUpdates={handleSetAutoCheckUpdates}
+          onCheckForUpdatesNow={() => handleCheckForUpdates(true)}
         />
       )}
 

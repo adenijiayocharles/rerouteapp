@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as disableAutostart } from "@tauri-apps/plugin-autostart";
+import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type {
   DiffPreview,
   Entry,
@@ -65,4 +68,12 @@ export const api = {
   getHistoryRetention: () =>
     invoke<string | null>("get_setting", { key: "history_retention" }).then((v) => (v ?? "200") as HistoryRetention),
   setHistoryRetention: (value: HistoryRetention) => invoke<void>("set_setting", { key: "history_retention", value }),
+
+  getAppVersion: () => getVersion(),
+  checkForUpdate: () => checkForUpdate(),
+  getAutoCheckUpdates: () =>
+    invoke<string | null>("get_setting", { key: "auto_check_updates" }).then((v) => v !== "false"),
+  setAutoCheckUpdates: (enabled: boolean) =>
+    invoke<void>("set_setting", { key: "auto_check_updates", value: enabled ? "true" : "false" }),
+  relaunchApp: () => relaunch(),
 };

@@ -67,6 +67,23 @@ export function Toast({ c, toast, onDismiss, onRetryFlush }: ToastProps) {
             Retry DNS flush
           </button>
         )}
+        {toast.updateAction && (
+          <button
+            onClick={toast.updateAction.onClick}
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              fontWeight: 700,
+              color: c.accent,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            {toast.updateAction.label}
+          </button>
+        )}
       </div>
       <button
         onClick={onDismiss}

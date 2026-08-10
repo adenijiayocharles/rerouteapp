@@ -91,4 +91,5 @@ export interface ToastState {
   title: string;
   message: string;
   retryFlush?: boolean;
+  updateAction?: { label: string; onClick: () => void };
 }
