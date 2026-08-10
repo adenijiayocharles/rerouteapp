@@ -75,7 +75,7 @@ export function SettingsModal({
           top: "50%",
           left: "50%",
           transform: "translate(-50%,-50%)",
-          width: 480,
+          width: 720,
           background: c.cardBg,
           borderRadius: 14,
           boxShadow: c.popShadow,
@@ -109,7 +109,7 @@ export function SettingsModal({
           <ToggleRow
             c={c}
             title="Launch at login"
-            description="Start Reroute automatically when you sign in."
+            description=""
             checked={launchAtLogin}
             onToggle={() => onSetLaunchAtLogin(!launchAtLogin)}
           />
@@ -119,7 +119,7 @@ export function SettingsModal({
             <ToggleRow
               c={c}
               title="Automatically check for updates"
-              description="Check for new versions on startup and periodically while Reroute is running."
+              description=""
               checked={autoCheckUpdates}
               onToggle={() => onSetAutoCheckUpdates(!autoCheckUpdates)}
             />
@@ -154,7 +154,7 @@ export function SettingsModal({
             <ToggleRow
               c={c}
               title="Auto-flush DNS on IP switch"
-              description="Flush the local DNS resolver cache whenever an entry's active IP changes."
+              description=""
               checked={autoFlushDns}
               onToggle={() => onSetAutoFlushDns(!autoFlushDns)}
             />
@@ -162,7 +162,7 @@ export function SettingsModal({
               <ToggleRow
                 c={c}
                 title="Always preview before saving"
-                description="Show the diff confirmation for every save, including brand-new entries."
+                description=""
                 checked={confirmBeforeSave}
                 onToggle={() => onSetConfirmBeforeSave(!confirmBeforeSave)}
               />
