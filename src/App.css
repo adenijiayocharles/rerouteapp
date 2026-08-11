@@ -7,6 +7,17 @@ body,
 #root {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #000;
+}
+
+@media (prefers-color-scheme: light) {
+  html,
+  body,
+  #root {
+    background: #fff;
+  }
 }
 
 ::selection {
@@ -74,6 +85,10 @@ body,
   to {
     transform: rotate(360deg);
   }
+}
+
+.hm-scroll {
+  overscroll-behavior: none;
 }
 
 .hm-scroll::-webkit-scrollbar {
