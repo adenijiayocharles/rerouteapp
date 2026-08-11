@@ -8,7 +8,7 @@ interface DraftPanelProps {
   theme: Theme;
   draft: EntryDraft;
   onClose: () => void;
-  onFieldChange: <K extends "hostname" | "comment" | "group">(field: K, value: string) => void;
+  onFieldChange: <K extends "hostname" | "group">(field: K, value: string) => void;
   onIpFieldChange: (uid: string, field: "label" | "ip", value: string) => void;
   onAddIpRow: () => void;
   onRemoveIpRow: (uid: string) => void;
@@ -202,27 +202,14 @@ export function DraftPanel({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12 }}>
-            {!isNew && (
-              <div style={{ flex: 1 }}>
-                <label style={labelStyle(c, theme)}>Comment</label>
-                <input
-                  value={draft.comment}
-                  onChange={(e) => onFieldChange("comment", e.target.value)}
-                  placeholder="Optional note"
-                  style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
-                />
-              </div>
-            )}
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle(c, theme)}>Group</label>
-              <input
-                value={draft.group}
-                onChange={(e) => onFieldChange("group", e.target.value)}
-                placeholder="e.g. Work"
-                style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
-              />
-            </div>
+          <div>
+            <label style={labelStyle(c, theme)}>Group</label>
+            <input
+              value={draft.group}
+              onChange={(e) => onFieldChange("group", e.target.value)}
+              placeholder="e.g. Work"
+              style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
+            />
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>

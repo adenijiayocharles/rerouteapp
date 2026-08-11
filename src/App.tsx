@@ -111,7 +111,7 @@ type Action =
   | { type: "OPEN_ADD_PANEL" }
   | { type: "OPEN_EDIT_PANEL"; entry: Entry }
   | { type: "CLOSE_DRAFT" }
-  | { type: "UPDATE_DRAFT_FIELD"; field: "hostname" | "comment" | "group"; value: string }
+  | { type: "UPDATE_DRAFT_FIELD"; field: "hostname" | "group"; value: string }
   | { type: "UPDATE_DRAFT_IP"; uid: string; field: "label" | "ip"; value: string }
   | { type: "ADD_DRAFT_IP_ROW" }
   | { type: "REMOVE_DRAFT_IP_ROW"; uid: string }
