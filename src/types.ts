@@ -60,6 +60,13 @@ export interface LintDiagnostic {
 
 export type DiffMode = "save" | "restore" | "view" | "delete" | "raw" | "adopt";
 
+export interface GroupPropagationNotice {
+  group: string;
+  kind: "added" | "relabeled";
+  ips: string[];
+  hostnames: string[];
+}
+
 export interface DiffPreview {
   mode: DiffMode;
   isNew: boolean;
@@ -74,6 +81,7 @@ export interface DiffPreview {
   historyAfter: Entry | null;
   diffLines: DiffLine[] | null;
   diagnostics: LintDiagnostic[] | null;
+  groupPropagation: GroupPropagationNotice[] | null;
 }
 
 export interface WriteResult {

@@ -239,6 +239,123 @@ pub fn rename_group(conn: &Connection, old_name: &str, new_name: &str) -> rusqli
     Ok(())
 }
 
+/// Sibling entries paired with the IP candidates each one is about to gain,
+/// as computed by `group_propagation_plan` and applied by
+/// `apply_group_propagation`.
+pub type GroupPropagationPlan = Vec<(Entry, Vec<IpCandidate>)>;
+
+/// For every other entry sharing `group` (any entry besides `exclude_id`
+/// with the same non-empty group), the subset of `new_ips` it doesn't
+/// already carry (matched by IP address, not label — a sibling that
+/// happens to already have the same address under a different label is
+/// left alone). Read-only, so `preview_save` can show the same plan
+/// `confirm_save` is about to apply without mutating anything.
+pub fn group_propagation_plan(
+    conn: &Connection,
+    group: &str,
+    exclude_id: &str,
+    new_ips: &[IpCandidate],
+) -> rusqlite::Result<GroupPropagationPlan> {
+    if group.is_empty() || new_ips.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut plan = Vec::new();
+    for entry in list_entries(conn)? {
+        if entry.id == exclude_id || entry.group != group {
+            continue;
+        }
+        let existing: std::collections::HashSet<&str> = entry.ips.iter().map(|i| i.ip.as_str()).collect();
+        let missing: Vec<IpCandidate> = new_ips.iter().filter(|ip| !existing.contains(ip.ip.as_str())).cloned().collect();
+        if !missing.is_empty() {
+            plan.push((entry, missing));
+        }
+    }
+    Ok(plan)
+}
+
+/// Applies a plan from `group_propagation_plan`: appends each listed IP as
+/// a new candidate on its target entry, after that entry's existing
+/// candidates. Never touches `active_ip_id`, so a sibling keeps resolving
+/// to whatever it already resolved to — the propagated IP just becomes
+/// available to switch to.
+pub fn apply_group_propagation(conn: &Connection, plan: &GroupPropagationPlan) -> rusqlite::Result<()> {
+    let ts = now();
+    for (entry, ips) in plan {
+        let next_order: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(order_index), -1) + 1 FROM ip_candidates WHERE entry_id = ?1",
+            params![entry.id],
+            |row| row.get(0),
+        )?;
+        for (i, ip) in ips.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO ip_candidates (id, entry_id, label, ip, order_index, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![Uuid::new_v4().to_string(), entry.id, ip.label, ip.ip, next_order + i as i64, ts],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// One sibling IP candidate whose label is about to change to match a
+/// relabel made elsewhere in its group.
+#[derive(Clone, Debug)]
+pub struct RelabelUpdate {
+    pub candidate_id: String,
+    pub ip: String,
+    pub label: String,
+}
+
+/// Sibling entries paired with the label updates each one is about to get,
+/// as computed by `group_relabel_plan` and applied by `apply_group_relabel`.
+pub type GroupRelabelPlan = Vec<(Entry, Vec<RelabelUpdate>)>;
+
+/// For every other entry sharing `group`, any IP candidate whose address
+/// matches one of `relabeled` but whose label doesn't yet match — i.e. what
+/// needs updating so the whole group agrees on that address's label. Like
+/// `group_propagation_plan`, read-only so `preview_save` can show the same
+/// plan `confirm_save` is about to apply.
+pub fn group_relabel_plan(
+    conn: &Connection,
+    group: &str,
+    exclude_id: &str,
+    relabeled: &[IpCandidate],
+) -> rusqlite::Result<GroupRelabelPlan> {
+    if group.is_empty() || relabeled.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut plan = Vec::new();
+    for entry in list_entries(conn)? {
+        if entry.id == exclude_id || entry.group != group {
+            continue;
+        }
+        let mut updates = Vec::new();
+        for ip in &entry.ips {
+            if let Some(source) = relabeled.iter().find(|r| r.ip == ip.ip) {
+                if ip.label != source.label {
+                    updates.push(RelabelUpdate { candidate_id: ip.id.clone(), ip: ip.ip.clone(), label: source.label.clone() });
+                }
+            }
+        }
+        if !updates.is_empty() {
+            plan.push((entry, updates));
+        }
+    }
+    Ok(plan)
+}
+
+/// Applies a plan from `group_relabel_plan`: updates each listed
+/// candidate's label in place. Doesn't touch the IP address or which
+/// candidate is active — only the label text.
+pub fn apply_group_relabel(conn: &Connection, plan: &GroupRelabelPlan) -> rusqlite::Result<()> {
+    for (_, updates) in plan {
+        for u in updates {
+            conn.execute("UPDATE ip_candidates SET label = ?1 WHERE id = ?2", params![u.label, u.candidate_id])?;
+        }
+    }
+    Ok(())
+}
+
 pub fn delete_entry(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM ip_candidates WHERE entry_id = ?1", params![id])?;
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])?;
@@ -544,5 +661,101 @@ mod tests {
         let entries = list_entries(&conn).unwrap();
         let groups: Vec<&str> = entries.iter().map(|e| e.group.as_str()).collect();
         assert_eq!(groups, vec!["Work", "Work", "unrelated"]);
+    }
+
+    #[test]
+    fn group_propagation_plan_finds_siblings_missing_the_new_ip() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_in_group("api.local", "Work")).unwrap();
+        let admin = insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+        insert_entry(&conn, &draft_in_group("other.local", "Elsewhere")).unwrap();
+
+        let new_ip = IpCandidate { id: "new-ip".to_string(), label: "Backup".to_string(), ip: "10.0.0.2".to_string() };
+        let plan = group_propagation_plan(&conn, "Work", &api.id, std::slice::from_ref(&new_ip)).unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].0.id, admin.id);
+        assert_eq!(plan[0].1.len(), 1);
+        assert_eq!(plan[0].1[0].ip, new_ip.ip);
+        assert_eq!(plan[0].1[0].label, new_ip.label);
+    }
+
+    #[test]
+    fn group_propagation_plan_skips_siblings_that_already_have_the_ip() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_in_group("api.local", "Work")).unwrap();
+        insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+
+        // admin.local already has 10.0.0.1 from draft_in_group, so
+        // "propagating" that same address back onto it should be a no-op.
+        let existing_ip = IpCandidate { id: "whatever".to_string(), label: "primary".to_string(), ip: "10.0.0.1".to_string() };
+        let plan = group_propagation_plan(&conn, "Work", &api.id, std::slice::from_ref(&existing_ip)).unwrap();
+
+        assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn apply_group_propagation_adds_a_candidate_without_changing_the_active_ip() {
+        let conn = setup();
+        let admin = insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+        let original_active = admin.active_ip_id.clone();
+
+        let new_ip = IpCandidate { id: "new-ip".to_string(), label: "Backup".to_string(), ip: "10.0.0.2".to_string() };
+        apply_group_propagation(&conn, &vec![(admin.clone(), vec![new_ip])]).unwrap();
+
+        let refreshed = get_entry(&conn, &admin.id).unwrap().unwrap();
+        assert_eq!(refreshed.active_ip_id, original_active);
+        assert_eq!(refreshed.ips.len(), 2);
+        assert!(refreshed.ips.iter().any(|ip| ip.ip == "10.0.0.2" && ip.label == "Backup"));
+    }
+
+    #[test]
+    fn group_relabel_plan_finds_siblings_with_matching_ip_and_different_label() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_in_group("api.local", "Work")).unwrap();
+        let admin = insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+        insert_entry(&conn, &draft_in_group("other.local", "Elsewhere")).unwrap();
+
+        let relabeled = IpCandidate { id: "whatever".to_string(), label: "Renamed".to_string(), ip: "10.0.0.1".to_string() };
+        let plan = group_relabel_plan(&conn, "Work", &api.id, std::slice::from_ref(&relabeled)).unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].0.id, admin.id);
+        assert_eq!(plan[0].1.len(), 1);
+        assert_eq!(plan[0].1[0].candidate_id, admin.ips[0].id);
+        assert_eq!(plan[0].1[0].ip, "10.0.0.1");
+        assert_eq!(plan[0].1[0].label, "Renamed");
+    }
+
+    #[test]
+    fn group_relabel_plan_skips_siblings_already_matching_the_label() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_in_group("api.local", "Work")).unwrap();
+        insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+
+        // admin.local's IP is already labeled "primary" (from draft_in_group),
+        // so "relabeling" it to the same text should be a no-op.
+        let relabeled = IpCandidate { id: "whatever".to_string(), label: "primary".to_string(), ip: "10.0.0.1".to_string() };
+        let plan = group_relabel_plan(&conn, "Work", &api.id, std::slice::from_ref(&relabeled)).unwrap();
+
+        assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn apply_group_relabel_updates_the_label_without_changing_the_ip_or_active_selection() {
+        let conn = setup();
+        let admin = insert_entry(&conn, &draft_in_group("admin.local", "Work")).unwrap();
+        let original_active = admin.active_ip_id.clone();
+        let candidate_id = admin.ips[0].id.clone();
+
+        let update = RelabelUpdate { candidate_id: candidate_id.clone(), ip: "10.0.0.1".to_string(), label: "Renamed".to_string() };
+        apply_group_relabel(&conn, &vec![(admin.clone(), vec![update])]).unwrap();
+
+        let refreshed = get_entry(&conn, &admin.id).unwrap().unwrap();
+        assert_eq!(refreshed.active_ip_id, original_active);
+        assert_eq!(refreshed.ips.len(), 1);
+        assert_eq!(refreshed.ips[0].id, candidate_id);
+        assert_eq!(refreshed.ips[0].ip, "10.0.0.1");
+        assert_eq!(refreshed.ips[0].label, "Renamed");
     }
 }

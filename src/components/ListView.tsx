@@ -2,7 +2,7 @@ import type { ColorTokens } from "../theme";
 import type { Entry, UnmanagedEntry } from "../types";
 import { EntryRow, gridTemplate } from "./EntryRow";
 import { UnmanagedRow } from "./UnmanagedRow";
-import { PlusIcon, SearchIcon } from "./icons";
+import { ChevronDownIcon, PlusIcon, SearchIcon } from "./icons";
 
 interface ListViewProps {
   c: ColorTokens;
@@ -23,6 +23,8 @@ interface ListViewProps {
   onDelete: (entryId: string) => void;
   onSwitchIp: (entryId: string, ipId: string) => void;
   onAdopt: (id: string) => void;
+  unmanagedCollapsed: boolean;
+  onToggleUnmanagedCollapsed: () => void;
 }
 
 export function ListView({
@@ -44,6 +46,8 @@ export function ListView({
   onDelete,
   onSwitchIp,
   onAdopt,
+  unmanagedCollapsed,
+  onToggleUnmanagedCollapsed,
 }: ListViewProps) {
   const subtitle = groupFilter ? `${groupFilter} · ${entries.length} entries` : `${totalEntryCount} managed entries`;
 
@@ -176,14 +180,47 @@ export function ListView({
 
         {unmanagedEntries.length > 0 && (
           <>
-            <div style={{ fontSize: 11, fontWeight: 700, color: c.textFaint, textTransform: "uppercase", letterSpacing: ".05em", margin: "20px 0 8px" }}>
-              Found in hosts file, not managed here
-            </div>
-            <div style={{ borderRadius: 12, border: `1px dashed ${c.border}`, overflow: "visible", background: c.cardBg }}>
-              {unmanagedEntries.map((entry) => (
-                <UnmanagedRow key={entry.id} c={c} entry={entry} disabled={disabled} onAdopt={onAdopt} />
-              ))}
-            </div>
+            <button
+              onClick={onToggleUnmanagedCollapsed}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                margin: "20px 0 8px",
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: c.textFaint,
+                  textTransform: "uppercase",
+                  letterSpacing: ".05em",
+                }}
+              >
+                Found in hosts file, not managed here ({unmanagedEntries.length})
+              </span>
+              <span
+                style={{
+                  display: "flex",
+                  transform: unmanagedCollapsed ? "rotate(-90deg)" : "none",
+                  transition: "transform .15s ease",
+                }}
+              >
+                <ChevronDownIcon size={11} color={c.textFaint} />
+              </span>
+            </button>
+            {!unmanagedCollapsed && (
+              <div style={{ borderRadius: 12, border: `1px dashed ${c.border}`, overflow: "visible", background: c.cardBg }}>
+                {unmanagedEntries.map((entry) => (
+                  <UnmanagedRow key={entry.id} c={c} entry={entry} disabled={disabled} onAdopt={onAdopt} />
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

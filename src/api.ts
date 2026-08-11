@@ -66,6 +66,16 @@ export const api = {
   setConfirmBeforeSave: (enabled: boolean) =>
     invoke<void>("set_setting", { key: "confirm_before_save", value: enabled ? "true" : "false" }),
 
+  getPropagateGroupIps: () =>
+    invoke<string | null>("get_setting", { key: "propagate_group_ips" }).then((v) => v !== "false"),
+  setPropagateGroupIps: (enabled: boolean) =>
+    invoke<void>("set_setting", { key: "propagate_group_ips", value: enabled ? "true" : "false" }),
+
+  getUnmanagedListCollapsed: () =>
+    invoke<string | null>("get_setting", { key: "unmanaged_list_collapsed" }).then((v) => v === "true"),
+  setUnmanagedListCollapsed: (collapsed: boolean) =>
+    invoke<void>("set_setting", { key: "unmanaged_list_collapsed", value: collapsed ? "true" : "false" }),
+
   getHistoryRetention: () =>
     invoke<string | null>("get_setting", { key: "history_retention" }).then((v) => (v ?? "200") as HistoryRetention),
   setHistoryRetention: (value: HistoryRetention) => invoke<void>("set_setting", { key: "history_retention", value }),

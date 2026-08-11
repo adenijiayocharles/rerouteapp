@@ -98,6 +98,7 @@ pub fn preview_adopt(state: State<AppState>, id: String) -> Result<DiffPreview, 
         history_after: None,
         diff_lines: None,
         diagnostics: None,
+        group_propagation: None,
     })
 }
 

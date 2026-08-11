@@ -75,6 +75,7 @@ pub fn preview_raw_save(state: State<AppState>, content: String) -> Result<DiffP
         history_after: None,
         diff_lines: Some(diff_lines),
         diagnostics: Some(diagnostics),
+        group_propagation: None,
     })
 }
 

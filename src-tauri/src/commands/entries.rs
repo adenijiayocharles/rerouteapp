@@ -5,8 +5,8 @@
 use tauri::{AppHandle, State};
 
 use super::{
-    auto_flush_dns_enabled, backup_and_write, draft_to_entry, flush_message_for, normalize_draft_hostname,
-    prune_history, validate_draft, WriteResult,
+    auto_flush_dns_enabled, backup_and_write, draft_to_entry, flush_message_for, group_propagation_plans,
+    normalize_draft_hostname, prune_history, validate_draft, WriteResult,
 };
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry};
@@ -78,6 +78,7 @@ pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<Dif
     } else {
         format!("Save changes to \u{201c}{}\u{201d}", after.hostname)
     };
+    let (_, _, group_propagation) = group_propagation_plans(&conn, before.as_ref(), &after)?;
 
     Ok(DiffPreview {
         mode: "save".to_string(),
@@ -93,6 +94,7 @@ pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<Dif
         history_after: None,
         diff_lines: None,
         diagnostics: None,
+        group_propagation: if group_propagation.is_empty() { None } else { Some(group_propagation) },
     })
 }
 
@@ -114,6 +116,22 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
     } else {
         store::update_entry(&tx, draft.id.as_ref().unwrap(), &draft).map_err(|e| e.to_string())?
     };
+
+    // Mirrors what `preview_save` showed in the review-changes modal: any
+    // IP this save just introduced also lands on every other entry in the
+    // same group (as an extra candidate — it doesn't touch which IP a
+    // sibling is actively resolving to), and any IP whose label just
+    // changed carries that new label over to matching-address candidates
+    // there too. `entries` is re-read below so it (and therefore the tray
+    // menu and what's written to disk) reflects both.
+    let (add_plan, relabel_plan, _) = group_propagation_plans(&tx, before_snapshot.as_ref(), &after_entry)?;
+    if !add_plan.is_empty() {
+        store::apply_group_propagation(&tx, &add_plan).map_err(|e| e.to_string())?;
+    }
+    if !relabel_plan.is_empty() {
+        store::apply_group_relabel(&tx, &relabel_plan).map_err(|e| e.to_string())?;
+    }
+
     let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
 
     let do_flush = auto_flush_dns_enabled(&tx); // Settings page toggle, on by default
@@ -261,6 +279,7 @@ pub fn history_diff(state: State<AppState>, history_id: String) -> Result<DiffPr
         history_after: h.after,
         diff_lines: None,
         diagnostics: None,
+        group_propagation: None,
     })
 }
 
@@ -299,6 +318,7 @@ pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<Dif
         history_after: h.before,
         diff_lines: None,
         diagnostics: None,
+        group_propagation: None,
     })
 }
 
@@ -381,6 +401,7 @@ pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPr
         history_after: None,
         diff_lines: None,
         diagnostics: None,
+        group_propagation: None,
     })
 }
 

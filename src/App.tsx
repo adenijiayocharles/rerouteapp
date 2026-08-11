@@ -64,6 +64,8 @@ interface State {
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
+  propagateGroupIps: boolean;
+  unmanagedListCollapsed: boolean;
   historyRetention: HistoryRetention;
   appVersion: string | null;
   autoCheckUpdates: boolean;
@@ -85,6 +87,8 @@ type Action =
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
   | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
   | { type: "SET_CONFIRM_BEFORE_SAVE"; enabled: boolean }
+  | { type: "SET_PROPAGATE_GROUP_IPS"; enabled: boolean }
+  | { type: "SET_UNMANAGED_LIST_COLLAPSED"; collapsed: boolean }
   | { type: "SET_HISTORY_RETENTION"; value: HistoryRetention }
   | { type: "SET_APP_VERSION"; version: string }
   | { type: "SET_AUTO_CHECK_UPDATES"; enabled: boolean }
@@ -162,6 +166,8 @@ const initialState: State = {
   launchAtLogin: false,
   autoFlushDns: true,
   confirmBeforeSave: false,
+  propagateGroupIps: true,
+  unmanagedListCollapsed: false,
   historyRetention: "200",
   appVersion: null,
   autoCheckUpdates: true,
@@ -192,6 +198,10 @@ function reducer(state: State, action: Action): State {
       return { ...state, autoFlushDns: action.enabled };
     case "SET_CONFIRM_BEFORE_SAVE":
       return { ...state, confirmBeforeSave: action.enabled };
+    case "SET_PROPAGATE_GROUP_IPS":
+      return { ...state, propagateGroupIps: action.enabled };
+    case "SET_UNMANAGED_LIST_COLLAPSED":
+      return { ...state, unmanagedListCollapsed: action.collapsed };
     case "SET_HISTORY_RETENTION":
       return { ...state, historyRetention: action.value };
     case "SET_APP_VERSION":
@@ -423,6 +433,11 @@ export default function App() {
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
     api.getAutoFlushDns().then((enabled) => dispatch({ type: "SET_AUTO_FLUSH_DNS", enabled })).catch(() => {});
     api.getConfirmBeforeSave().then((enabled) => dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled })).catch(() => {});
+    api.getPropagateGroupIps().then((enabled) => dispatch({ type: "SET_PROPAGATE_GROUP_IPS", enabled })).catch(() => {});
+    api
+      .getUnmanagedListCollapsed()
+      .then((collapsed) => dispatch({ type: "SET_UNMANAGED_LIST_COLLAPSED", collapsed }))
+      .catch(() => {});
     api.getHistoryRetention().then((value) => dispatch({ type: "SET_HISTORY_RETENTION", value })).catch(() => {});
     api.getAppVersion().then((version) => dispatch({ type: "SET_APP_VERSION", version })).catch(() => {});
     api.getAutoCheckUpdates().then((enabled) => {
@@ -483,6 +498,28 @@ export default function App() {
       dispatch({ type: "SET_CONFIRM_BEFORE_SAVE", enabled });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update save confirmation", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleSetPropagateGroupIps(enabled: boolean) {
+    try {
+      await api.setPropagateGroupIps(enabled);
+      dispatch({ type: "SET_PROPAGATE_GROUP_IPS", enabled });
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't update group IP propagation", message: errorMessage(err) } });
+    }
+  }
+
+  async function handleToggleUnmanagedCollapsed() {
+    const collapsed = !state.unmanagedListCollapsed;
+    // Optimistic: this is a lightweight display preference, not worth
+    // blocking the toggle's visual response on a round-trip.
+    dispatch({ type: "SET_UNMANAGED_LIST_COLLAPSED", collapsed });
+    try {
+      await api.setUnmanagedListCollapsed(collapsed);
+    } catch (err) {
+      dispatch({ type: "SET_UNMANAGED_LIST_COLLAPSED", collapsed: !collapsed });
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't save that preference", message: errorMessage(err) } });
     }
   }
 
@@ -672,6 +709,11 @@ export default function App() {
   async function performConfirmSave(draft: EntryDraft, isNew: boolean) {
     const result = await api.confirmSave(draft);
     if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+    // A save can propagate a newly-added IP to other entries in the same
+    // group (see the group-propagation notice in the preview modal), which
+    // UPSERT_ENTRY above doesn't cover since it only touches the entry that
+    // was actually edited.
+    await refreshEntries();
     await refreshHistory();
     refreshHelperStatus().catch(() => {});
     if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
@@ -1003,6 +1045,8 @@ export default function App() {
             onDelete={handleDeleteFromRow}
             onSwitchIp={handleSwitchIp}
             onAdopt={handleRequestAdopt}
+            unmanagedCollapsed={state.unmanagedListCollapsed}
+            onToggleUnmanagedCollapsed={handleToggleUnmanagedCollapsed}
           />
         ) : state.view === "history" ? (
           <HistoryView c={c} history={state.history} onViewDiff={handleViewHistoryDiff} onRestore={handleRequestRestore} />
@@ -1055,6 +1099,7 @@ export default function App() {
           launchAtLogin={state.launchAtLogin}
           autoFlushDns={state.autoFlushDns}
           confirmBeforeSave={state.confirmBeforeSave}
+          propagateGroupIps={state.propagateGroupIps}
           themePreference={state.themePreference}
           historyRetention={state.historyRetention}
           appVersion={state.appVersion}
@@ -1066,6 +1111,7 @@ export default function App() {
           onSetLaunchAtLogin={handleSetLaunchAtLogin}
           onSetAutoFlushDns={handleSetAutoFlushDns}
           onSetConfirmBeforeSave={handleSetConfirmBeforeSave}
+          onSetPropagateGroupIps={handleSetPropagateGroupIps}
           onSetHistoryRetention={handleSetHistoryRetention}
           onSetAutoCheckUpdates={handleSetAutoCheckUpdates}
           onCheckForUpdatesNow={() => handleCheckForUpdates(true)}

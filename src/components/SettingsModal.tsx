@@ -10,6 +10,7 @@ interface SettingsModalProps {
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
+  propagateGroupIps: boolean;
   themePreference: ThemePreference;
   historyRetention: HistoryRetention;
   appVersion: string | null;
@@ -20,6 +21,7 @@ interface SettingsModalProps {
   onSetLaunchAtLogin: (enabled: boolean) => void;
   onSetAutoFlushDns: (enabled: boolean) => void;
   onSetConfirmBeforeSave: (enabled: boolean) => void;
+  onSetPropagateGroupIps: (enabled: boolean) => void;
   onSetThemePreference: (preference: ThemePreference) => void;
   onSetHistoryRetention: (value: HistoryRetention) => void;
   onSetAutoCheckUpdates: (enabled: boolean) => void;
@@ -33,6 +35,7 @@ export function SettingsModal({
   launchAtLogin,
   autoFlushDns,
   confirmBeforeSave,
+  propagateGroupIps,
   themePreference,
   historyRetention,
   appVersion,
@@ -43,6 +46,7 @@ export function SettingsModal({
   onSetLaunchAtLogin,
   onSetAutoFlushDns,
   onSetConfirmBeforeSave,
+  onSetPropagateGroupIps,
   onSetThemePreference,
   onSetHistoryRetention,
   onSetAutoCheckUpdates,
@@ -165,6 +169,15 @@ export function SettingsModal({
                 description=""
                 checked={confirmBeforeSave}
                 onToggle={() => onSetConfirmBeforeSave(!confirmBeforeSave)}
+              />
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <ToggleRow
+                c={c}
+                title="Propagate new IPs to grouped entries"
+                description=""
+                checked={propagateGroupIps}
+                onToggle={() => onSetPropagateGroupIps(!propagateGroupIps)}
               />
             </div>
           </div>

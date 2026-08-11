@@ -216,3 +216,102 @@ fn auto_flush_dns_enabled(conn: &rusqlite::Connection) -> bool {
         .map(|v| v != "false")
         .unwrap_or(true)
 }
+
+/// Reads the Settings page "Propagate new IPs across group" toggle (on by
+/// default).
+fn propagate_group_ips_enabled(conn: &rusqlite::Connection) -> bool {
+    store::get_setting(conn, "propagate_group_ips")
+        .ok()
+        .flatten()
+        .map(|v| v != "false")
+        .unwrap_or(true)
+}
+
+/// The IP candidates on `after` that weren't already on `before` — i.e.
+/// what this save just introduced. `before` is `None` for a brand-new
+/// entry, in which case every one of its IPs counts as newly introduced.
+fn newly_added_ips(before: Option<&Entry>, after: &Entry) -> Vec<IpCandidate> {
+    match before {
+        None => after.ips.clone(),
+        Some(before) => {
+            let existing: std::collections::HashSet<&str> = before.ips.iter().map(|i| i.id.as_str()).collect();
+            after.ips.iter().filter(|ip| !existing.contains(ip.id.as_str())).cloned().collect()
+        }
+    }
+}
+
+/// The IP candidates on `after` whose *label* changed from `before` while
+/// their address stayed the same (an address that also changed isn't a
+/// "relabel" — `newly_added_ips` handles genuinely new candidates instead).
+/// `before` is `None` for a brand-new entry, which has nothing to relabel.
+fn relabeled_ips(before: Option<&Entry>, after: &Entry) -> Vec<IpCandidate> {
+    let Some(before) = before else {
+        return Vec::new();
+    };
+    let before_by_id: std::collections::HashMap<&str, &IpCandidate> = before.ips.iter().map(|i| (i.id.as_str(), i)).collect();
+    after
+        .ips
+        .iter()
+        .filter(|ip| before_by_id.get(ip.id.as_str()).is_some_and(|prev| prev.ip == ip.ip && prev.label != ip.label))
+        .cloned()
+        .collect()
+}
+
+/// Computes both group-propagation plans for a just-saved entry (read-only
+/// — safe to call from `preview_save`): new IPs that should be added as
+/// candidates to every other entry in its group, and label edits that
+/// should be carried over to matching-address candidates there too. Also
+/// returns the review-changes-modal notices describing whichever of those
+/// actually apply. Every list comes back empty when the setting is off or
+/// the entry isn't in a group.
+fn group_propagation_plans(
+    conn: &rusqlite::Connection,
+    before: Option<&Entry>,
+    after: &Entry,
+) -> Result<(store::GroupPropagationPlan, store::GroupRelabelPlan, Vec<crate::models::GroupPropagationNotice>), String> {
+    if !propagate_group_ips_enabled(conn) || after.group.is_empty() {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    }
+
+    let new_ips = newly_added_ips(before, after);
+    let add_plan = store::group_propagation_plan(conn, &after.group, &after.id, &new_ips).map_err(|e| e.to_string())?;
+
+    let relabeled = relabeled_ips(before, after);
+    let relabel_plan = store::group_relabel_plan(conn, &after.group, &after.id, &relabeled).map_err(|e| e.to_string())?;
+
+    let mut notices = Vec::new();
+    if !add_plan.is_empty() {
+        let mut ips: Vec<String> = Vec::new();
+        for (_, added) in &add_plan {
+            for ip in added {
+                if !ips.contains(&ip.ip) {
+                    ips.push(ip.ip.clone());
+                }
+            }
+        }
+        notices.push(crate::models::GroupPropagationNotice {
+            group: after.group.clone(),
+            kind: "added".to_string(),
+            ips,
+            hostnames: add_plan.iter().map(|(entry, _)| entry.hostname.clone()).collect(),
+        });
+    }
+    if !relabel_plan.is_empty() {
+        let mut ips: Vec<String> = Vec::new();
+        for (_, updates) in &relabel_plan {
+            for u in updates {
+                if !ips.contains(&u.ip) {
+                    ips.push(u.ip.clone());
+                }
+            }
+        }
+        notices.push(crate::models::GroupPropagationNotice {
+            group: after.group.clone(),
+            kind: "relabeled".to_string(),
+            ips,
+            hostnames: relabel_plan.iter().map(|(entry, _)| entry.hostname.clone()).collect(),
+        });
+    }
+
+    Ok((add_plan, relabel_plan, notices))
+}

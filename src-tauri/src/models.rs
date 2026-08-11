@@ -53,6 +53,23 @@ pub struct EntryDraft {
     pub ips: Vec<IpDraft>,
 }
 
+/// Surfaced in the review-changes modal when saving an entry would (or, in
+/// `confirm_save`, did) touch every other entry sharing its group, so the
+/// propagation is never a silent side effect: `kind: "added"` means an
+/// IP this save just introduced was also added as a candidate to those
+/// entries; `kind: "relabeled"` means an IP's label was edited and that
+/// new label was carried over to matching-address candidates there too.
+/// Not written to the hosts file itself — see `store::rename_group` for the
+/// "group is UI-only metadata" rationale, which applies here too: neither
+/// kind changes which IP a sibling's line actually resolves to.
+#[derive(Serialize, Clone, Debug)]
+pub struct GroupPropagationNotice {
+    pub group: String,
+    pub kind: String, // "added" | "relabeled"
+    pub ips: Vec<String>,
+    pub hostnames: Vec<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct DiffPreview {
     pub mode: String, // "save" | "restore" | "view" | "delete" | "raw"
@@ -77,4 +94,6 @@ pub struct DiffPreview {
     #[serde(rename = "diffLines")]
     pub diff_lines: Option<Vec<DiffLine>>,
     pub diagnostics: Option<Vec<LintDiagnostic>>,
+    #[serde(rename = "groupPropagation")]
+    pub group_propagation: Option<Vec<GroupPropagationNotice>>,
 }
