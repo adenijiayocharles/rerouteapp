@@ -1,6 +1,6 @@
 [package]
 name = "reroute"
-version = "0.2.0"
+version = "0.2.1"
 description = "re:route - manage system hosts file entries via a GUI"
 authors = ["you"]
 edition = "2021"
