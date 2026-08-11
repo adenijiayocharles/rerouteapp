@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use super::{draft_to_entry, prune_history, write_content_to_hosts_file};
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft};
-use crate::state::AppState;
+use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 use crate::validate;
 
@@ -105,51 +105,13 @@ pub fn preview_adopt(state: State<AppState>, id: String) -> Result<DiffPreview, 
 /// Moves an unmanaged entry into the app-managed block in one write: splits
 /// it into one DB entry per hostname (space/comma-separated lines adopt as
 /// several entries sharing the original IP), removes the original raw line,
-/// and regenerates the hosts file. Re-verifies the line still matches what
-/// was listed before removing it, in case the file changed out from under us.
+/// and regenerates the hosts file. A single-entry call into
+/// `confirm_adopt_many`, which is already a strict superset of this
+/// behavior (its multi-removal handling degenerates to the same single
+/// remove-then-render sequence when there's only one id).
 #[tauri::command]
 pub fn confirm_adopt(app: AppHandle, state: State<AppState>, id: String) -> Result<Vec<Entry>, String> {
-    let mut conn = state.conn.lock().unwrap();
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    let current = std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))?;
-    let unmanaged = find_unmanaged_entry(&current, &id)?;
-    let line_index: usize = unmanaged
-        .id
-        .parse()
-        .map_err(|_| "Invalid unmanaged entry id.".to_string())?;
-
-    let drafts = drafts_for_unmanaged(&unmanaged);
-    let mut after_entries = Vec::with_capacity(drafts.len());
-    for draft in &drafts {
-        after_entries.push(store::insert_entry(&tx, draft).map_err(|e| e.to_string())?);
-    }
-    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
-
-    let parsed = hosts_parser::remove_unmanaged_line(
-        &current,
-        line_index,
-        &unmanaged.ip,
-        &unmanaged.hostname,
-        &unmanaged.comment,
-    )
-    .ok_or_else(|| "The hosts file changed since this was listed \u{2014} reload and try again.".to_string())?;
-    let new_content = hosts_parser::render(&parsed, &entries);
-
-    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &new_content, false)?;
-    if !outcome.write_ok {
-        return Err("Failed to write the hosts file.".to_string());
-    }
-
-    for entry in &after_entries {
-        store::insert_history(&tx, &entry.hostname, "Adopted entry", Some(&entry.id), None, Some(entry), Some(&backup_path))
-            .map_err(|e| e.to_string())?;
-    }
-    prune_history(&tx)?;
-    tx.commit().map_err(|e| e.to_string())?;
-    crate::tray::sync(&app, &entries);
-
-    Ok(after_entries)
+    confirm_adopt_many(app, state, vec![id])
 }
 
 /// Moves several unmanaged entries into the app-managed block in a single
@@ -162,7 +124,7 @@ pub fn confirm_adopt_many(app: AppHandle, state: State<AppState>, ids: Vec<Strin
         return Err("No entries selected.".to_string());
     }
 
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let current = std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))?;
@@ -210,7 +172,7 @@ pub fn confirm_adopt_many(app: AppHandle, state: State<AppState>, ids: Vec<Strin
     let final_entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
     let new_content = hosts_parser::render(&parsed, &final_entries);
 
-    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &new_content, false)?;
+    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &new_content, false, None)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
     }

@@ -10,6 +10,8 @@
 //! one of those: the write pipeline (backup, elevation, the file watcher's
 //! own-write guard), draft validation/conversion, and history pruning.
 
+use std::path::{Path, PathBuf};
+
 use serde::Serialize;
 use tauri::AppHandle;
 
@@ -19,7 +21,7 @@ use crate::helper_client;
 use crate::helper_install;
 use crate::hosts_parser;
 use crate::models::{Entry, EntryDraft, IpCandidate};
-use crate::state::AppState;
+use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 use crate::validate;
 
@@ -52,6 +54,18 @@ fn normalize_draft_hostname(draft: &mut EntryDraft) {
     draft.hostname = validate::split_hostnames(&draft.hostname).join(" ");
 }
 
+/// `comment` and `group` end up interpolated verbatim into a rendered
+/// hosts-file line (`hosts_parser::build_line`) rather than going through
+/// hostname/IP-style syntax validation, so a control character — most
+/// importantly `\n`/`\r` — could otherwise inject an extra, unvalidated
+/// line (or the managed-block marker text) into the file. The only UI path
+/// to these fields is a plain `<input>`, whose own value-sanitization
+/// already strips embedded newlines, but the backend shouldn't rely on
+/// that alone.
+fn contains_control_chars(s: &str) -> bool {
+    s.chars().any(|c| c.is_control())
+}
+
 fn validate_draft(draft: &EntryDraft) -> Result<(), String> {
     let hostnames = validate::split_hostnames(&draft.hostname);
     if hostnames.is_empty() {
@@ -72,6 +86,12 @@ fn validate_draft(draft: &EntryDraft) -> Result<(), String> {
     }
     if !draft.ips.iter().any(|ip| ip.uid == draft.active_uid) {
         return Err("The active IP selection is invalid.".to_string());
+    }
+    if contains_control_chars(&draft.comment) {
+        return Err("Comment can\u{2019}t contain control characters or line breaks.".to_string());
+    }
+    if contains_control_chars(&draft.group) {
+        return Err("Group name can\u{2019}t contain control characters or line breaks.".to_string());
     }
     Ok(())
 }
@@ -113,7 +133,10 @@ fn backup_and_write(
         .map_err(|e| format!("Failed to read the hosts file: {e}"))?;
     let parsed = hosts_parser::parse(&current);
     let new_content = hosts_parser::render(&parsed, entries);
-    write_content_to_hosts_file(app, state, &new_content, do_flush)
+    // `current` was just read above to compute `new_content` — reuse it as
+    // the backup snapshot below instead of having
+    // `write_content_to_hosts_file` read the same file a second time.
+    write_content_to_hosts_file(app, state, &new_content, do_flush, Some(current))
 }
 
 /// Backs up the current hosts file and writes `new_content` to it verbatim.
@@ -123,20 +146,30 @@ fn backup_and_write(
 /// somehow stopped) ever prompts. Primes `last_written` before issuing the
 /// write so the file watcher doesn't mistake this write for an out-of-band
 /// edit.
+///
+/// `current`, when the caller already has the pre-write file content in
+/// hand (as `backup_and_write` does, having just read it to compute
+/// `new_content`), avoids reading `hosts_path` a second time purely to
+/// snapshot it for the backup file. Callers without an existing snapshot
+/// (adopt/raw-save, which build `new_content` some other way) pass `None`.
 fn write_content_to_hosts_file(
     app: &AppHandle,
     state: &AppState,
     new_content: &str,
     do_flush: bool,
+    current: Option<String>,
 ) -> Result<(elevate::WriteOutcome, String), String> {
-    let current = std::fs::read_to_string(&state.hosts_path)
-        .map_err(|e| format!("Failed to read the hosts file: {e}"))?;
+    let current = match current {
+        Some(c) => c,
+        None => std::fs::read_to_string(&state.hosts_path).map_err(|e| format!("Failed to read the hosts file: {e}"))?,
+    };
 
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ");
     let backup_path = state.backups_dir.join(format!("hosts-{timestamp}.bak"));
     std::fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
+    prune_backups(&state.backups_dir);
 
-    *state.last_written.lock().unwrap() = Some(new_content.to_string());
+    *state.last_written.lock_recover() = Some(new_content.to_string());
 
     let flush_cmd = if do_flush { dns_flush::flush_command() } else { None };
 
@@ -147,10 +180,13 @@ fn write_content_to_hosts_file(
         elevate::write_hosts_file(state.executor.as_ref(), &staging_path, &state.hosts_path, flush_cmd.as_deref())
     };
 
-    let outcome = if helper_client::ping() {
-        let write_ok = helper_client::write_hosts(new_content).is_ok();
+    let client_token = helper_client::load_token(&state.app_data_dir);
+    let reachable_token = client_token.as_deref().filter(|t| helper_client::ping(t));
+
+    let outcome = if let Some(token) = reachable_token {
+        let write_ok = helper_client::write_hosts(token, new_content).is_ok();
         let flush_ok = if write_ok && do_flush {
-            Some(helper_client::flush_dns().is_ok())
+            Some(helper_client::flush_dns(token).is_ok())
         } else {
             None
         };
@@ -172,10 +208,40 @@ fn write_content_to_hosts_file(
     };
 
     if !outcome.write_ok {
-        *state.last_written.lock().unwrap() = None;
+        *state.last_written.lock_recover() = None;
     }
 
     Ok((outcome, backup_path.to_string_lossy().to_string()))
+}
+
+/// Number of `hosts-*.bak` snapshots to retain in `backups_dir`; older ones
+/// are deleted after every write. Mirrors `history`'s row-count pruning
+/// (`prune_history`) — without this, backups accumulate one file per write
+/// forever, unlike every other piece of app-managed state.
+const BACKUP_RETENTION_COUNT: usize = 200;
+
+fn prune_backups(backups_dir: &Path) {
+    let Ok(read_dir) = std::fs::read_dir(backups_dir) else {
+        return;
+    };
+    let mut backups: Vec<PathBuf> = read_dir
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("hosts-") && n.ends_with(".bak"))
+        })
+        .collect();
+    if backups.len() <= BACKUP_RETENTION_COUNT {
+        return;
+    }
+    // Filenames embed a sortable timestamp (hosts-%Y%m%dT%H%M%S%.3fZ.bak),
+    // so lexicographic order is chronological order.
+    backups.sort();
+    for path in &backups[..backups.len() - BACKUP_RETENTION_COUNT] {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 fn flush_message_for(do_flush: bool, outcome: &elevate::WriteOutcome, hostname: &str, ip: &str) -> Option<String> {
@@ -273,11 +339,15 @@ fn group_propagation_plans(
         return Ok((Vec::new(), Vec::new(), Vec::new()));
     }
 
+    // Fetched once and shared by both plan functions below, rather than
+    // each independently re-querying the full entry list.
+    let entries = store::list_entries(conn).map_err(|e| e.to_string())?;
+
     let new_ips = newly_added_ips(before, after);
-    let add_plan = store::group_propagation_plan(conn, &after.group, &after.id, &new_ips).map_err(|e| e.to_string())?;
+    let add_plan = store::group_propagation_plan(&entries, &after.group, &after.id, &new_ips);
 
     let relabeled = relabeled_ips(before, after);
-    let relabel_plan = store::group_relabel_plan(conn, &after.group, &after.id, &relabeled).map_err(|e| e.to_string())?;
+    let relabel_plan = store::group_relabel_plan(&entries, &after.group, &after.id, &relabeled);
 
     let mut notices = Vec::new();
     if !add_plan.is_empty() {
@@ -314,4 +384,89 @@ fn group_propagation_plans(
     }
 
     Ok((add_plan, relabel_plan, notices))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::IpDraft;
+
+    fn touch(dir: &Path, name: &str) {
+        std::fs::write(dir.join(name), "backup").unwrap();
+    }
+
+    fn valid_draft() -> EntryDraft {
+        EntryDraft {
+            id: None,
+            hostname: "api.local".to_string(),
+            comment: String::new(),
+            group: String::new(),
+            enabled: true,
+            active_uid: "ip-1".to_string(),
+            ips: vec![IpDraft { uid: "ip-1".to_string(), label: String::new(), ip: "10.0.0.1".to_string() }],
+        }
+    }
+
+    #[test]
+    fn validate_draft_accepts_a_plain_comment_and_group() {
+        let mut draft = valid_draft();
+        draft.comment = "staging box".to_string();
+        draft.group = "Work".to_string();
+        assert!(validate_draft(&draft).is_ok());
+    }
+
+    #[test]
+    fn validate_draft_rejects_a_newline_in_the_comment() {
+        let mut draft = valid_draft();
+        draft.comment = "ok\n169.254.169.254\tmetadata.internal".to_string();
+        assert!(validate_draft(&draft).is_err());
+    }
+
+    #[test]
+    fn validate_draft_rejects_a_newline_in_the_group() {
+        let mut draft = valid_draft();
+        draft.group = "Work\n# reroute:end".to_string();
+        assert!(validate_draft(&draft).is_err());
+    }
+
+    #[test]
+    fn prune_backups_keeps_only_the_most_recent_n_by_filename_order() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..(BACKUP_RETENTION_COUNT + 5) {
+            touch(dir.path(), &format!("hosts-{i:04}.bak"));
+        }
+
+        prune_backups(dir.path());
+
+        let remaining: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(remaining.len(), BACKUP_RETENTION_COUNT);
+        // The oldest 5 (lowest-numbered) should be the ones removed.
+        assert!(!remaining.contains(&"hosts-0000.bak".to_string()));
+        assert!(remaining.contains(&format!("hosts-{:04}.bak", BACKUP_RETENTION_COUNT + 4)));
+    }
+
+    #[test]
+    fn prune_backups_is_a_noop_when_under_the_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), "hosts-0001.bak");
+        touch(dir.path(), "hosts-0002.bak");
+
+        prune_backups(dir.path());
+
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn prune_backups_ignores_non_backup_files() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(dir.path(), ".staging-hosts");
+        touch(dir.path(), "not-a-backup.txt");
+
+        prune_backups(dir.path());
+
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
 }

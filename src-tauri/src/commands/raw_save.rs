@@ -8,7 +8,7 @@ use crate::diff;
 use crate::hosts_parser;
 use crate::lint;
 use crate::models::{DiffPreview, Entry, EntryDraft};
-use crate::state::AppState;
+use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 
 /// Reads `/etc/hosts` fresh off disk, for opening the raw editor and for
@@ -55,7 +55,7 @@ pub fn preview_raw_save(state: State<AppState>, content: String) -> Result<DiffP
     let mut diagnostics = lint::lint_managed_block(&content);
 
     let existing = {
-        let conn = state.read_conn.lock().unwrap();
+        let conn = state.read_conn.lock_recover();
         store::list_entries(&conn).map_err(|e| e.to_string())?
     };
     let parsed_lines = hosts_parser::parse_managed_block(&content);
@@ -218,13 +218,13 @@ fn record_reconciliation_history(
 /// backup path from the successful write is known.
 #[tauri::command]
 pub fn confirm_raw_save(app: AppHandle, state: State<AppState>, content: String) -> Result<WriteResult, String> {
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let parsed_lines = hosts_parser::parse_managed_block(&content);
     let changes = plan_reconciliation(&tx, &parsed_lines)?;
 
-    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &content, false)?;
+    let (outcome, backup_path) = write_content_to_hosts_file(&app, &state, &content, false, None)?;
     if !outcome.write_ok {
         return Err("Failed to write the hosts file.".to_string());
     }

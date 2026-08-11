@@ -1,8 +1,17 @@
 //! Wire protocol shared between the re:route app and its privileged
 //! helper daemon. Kept deliberately narrow: the daemon never executes a
 //! client-supplied shell command or path — only these two fixed
-//! operations — so there is no command/argument injection surface even
-//! though any process running as the current user can reach the socket.
+//! operations — so there is no command/argument injection surface.
+//!
+//! Authorization is two-layered: the daemon first checks that the
+//! connecting peer's UID belongs to the `admin` group (see `helper`'s
+//! `is_admin`), then requires a `Hello { token }` handshake carrying a
+//! random per-install secret written to `HELPER_TOKEN_PATH` (root-owned,
+//! mode 0600) at install time and mirrored into the app's own data
+//! directory for the client to read back. The group check alone would let
+//! *any* admin-group process reach the daemon, not just re:route; the
+//! token narrows that back down to whoever can read the app's own,
+//! per-user-permissioned copy.
 
 use std::io::{self, Read, Write};
 
@@ -13,6 +22,16 @@ pub const HELPER_BINARY_NAME: &str = "com.reroute.app.helper";
 pub const SOCKET_PATH: &str = "/var/run/com.reroute.app.helper.sock";
 pub const HELPER_INSTALL_DIR: &str = "/Library/PrivilegedHelperTools";
 pub const LAUNCH_DAEMON_PLIST_PATH: &str = "/Library/LaunchDaemons/com.reroute.app.helper.plist";
+/// Root-owned, mode-0600 file holding the per-install shared secret the
+/// daemon requires before honoring any request. Written alongside the
+/// helper binary at install time.
+pub const HELPER_TOKEN_PATH: &str = "/Library/PrivilegedHelperTools/com.reroute.app.helper.token";
+
+/// Sent once, immediately after connecting, before any `Request`.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Hello {
+    pub token: String,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
@@ -28,6 +47,9 @@ pub enum Request {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
+    /// Sent once, in reply to `Hello`, before the daemon accepts any
+    /// `Request` on this connection.
+    AuthOk,
     Pong,
     WriteOk,
     FlushOk,
@@ -72,6 +94,19 @@ mod tests {
             Request::WriteHosts { content } => assert_eq!(content, "127.0.0.1\thost\n"),
             other => panic!("expected WriteHosts, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn write_then_read_round_trips_hello_and_auth_ok() {
+        let mut buf = Vec::new();
+        write_message(&mut buf, &Hello { token: "deadbeef".to_string() }).unwrap();
+        let read_back: Hello = read_message(Cursor::new(buf)).unwrap();
+        assert_eq!(read_back.token, "deadbeef");
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &Response::AuthOk).unwrap();
+        let read_back: Response = read_message(Cursor::new(buf)).unwrap();
+        assert!(matches!(read_back, Response::AuthOk));
     }
 
     #[test]

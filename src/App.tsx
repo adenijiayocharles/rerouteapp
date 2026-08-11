@@ -4,7 +4,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import "./App.css";
 import { api } from "./api";
 import { colorsFor, type Theme, type ThemePreference } from "./theme";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, ToastState, UnmanagedEntry } from "./types";
+import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, IpCandidate, ToastState, UnmanagedEntry } from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ListView } from "./components/ListView";
@@ -176,10 +176,41 @@ const initialState: State = {
   updateProgress: null,
 };
 
+function ipsEqual(a: IpCandidate[], b: IpCandidate[]): boolean {
+  return a.length === b.length && a.every((ip, i) => ip.id === b[i].id && ip.label === b[i].label && ip.ip === b[i].ip);
+}
+
+function entriesEqual(a: Entry, b: Entry): boolean {
+  return (
+    a.hostname === b.hostname &&
+    a.comment === b.comment &&
+    a.group === b.group &&
+    a.enabled === b.enabled &&
+    a.activeIpId === b.activeIpId &&
+    a.lastModified === b.lastModified &&
+    ipsEqual(a.ips, b.ips)
+  );
+}
+
+/**
+ * Reuses `prev`'s object references for entries whose content is unchanged
+ * in `next`, instead of adopting `next` wholesale. Every `invoke()`
+ * round-trip deserializes a brand-new object graph, so a plain "replace
+ * with the freshly fetched array" defeats `EntryRow`'s `React.memo` for
+ * every row on every refresh, not just the row that actually changed.
+ */
+function mergeEntries(prev: Entry[], next: Entry[]): Entry[] {
+  const prevById = new Map(prev.map((e) => [e.id, e]));
+  return next.map((entry) => {
+    const existing = prevById.get(entry.id);
+    return existing && entriesEqual(existing, entry) ? existing : entry;
+  });
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "SET_ENTRIES":
-      return { ...state, entries: action.entries };
+      return { ...state, entries: mergeEntries(state.entries, action.entries) };
     case "SET_UNMANAGED_ENTRIES":
       return { ...state, unmanagedEntries: action.entries };
     case "SHOW_ONBOARDING":
@@ -448,7 +479,10 @@ export default function App() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (state.autoCheckUpdates && updateStatusRef.current === "idle") {
+      // Skip a tick that lands while the window is hidden/minimized rather
+      // than firing an update check nobody can see the result of yet — the
+      // next tick (or the next time the window becomes visible) covers it.
+      if (state.autoCheckUpdates && updateStatusRef.current === "idle" && document.visibilityState === "visible") {
         handleCheckForUpdates(false);
       }
     }, UPDATE_CHECK_INTERVAL_MS);
@@ -560,6 +594,11 @@ export default function App() {
 
     let contentLength = 0;
     let downloaded = 0;
+    // Progress events fire once per network chunk (potentially hundreds of
+    // times for a multi-MB installer); only dispatch when the rounded
+    // percentage actually changes instead of on every chunk, since every
+    // dispatch re-renders the whole app under the single top-level reducer.
+    let lastDispatchedProgress: number | null = 0;
     try {
       await update.download((event) => {
         if (event.event === "Started") {
@@ -567,6 +606,8 @@ export default function App() {
         } else if (event.event === "Progress") {
           downloaded += event.data.chunkLength;
           const progress = contentLength > 0 ? Math.min(100, Math.round((downloaded / contentLength) * 100)) : null;
+          if (progress === lastDispatchedProgress) return;
+          lastDispatchedProgress = progress;
           dispatch({ type: "SET_UPDATE_STATUS", status: "downloading", progress });
           dispatch({
             type: "SET_TOAST",
@@ -802,9 +843,9 @@ export default function App() {
   }, []);
 
   async function handleAdoptSelected(ids: string[]) {
-    await api.confirmAdoptMany(ids);
+    const entries = await api.confirmAdoptMany(ids);
     dispatch({ type: "HIDE_ONBOARDING" });
-    await refreshEntries();
+    dispatch({ type: "SET_ENTRIES", entries });
     await refreshUnmanagedEntries();
     await refreshHistory();
     refreshHelperStatus().catch(() => {});
@@ -818,9 +859,9 @@ export default function App() {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === oldName) return;
     try {
-      await api.renameGroup(oldName, trimmed);
+      const entries = await api.renameGroup(oldName, trimmed);
       dispatch({ type: "RENAME_GROUP_FILTER", oldName, newName: trimmed });
-      await refreshEntries();
+      dispatch({ type: "SET_ENTRIES", entries });
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't rename group", message: errorMessage(err) } });
     }

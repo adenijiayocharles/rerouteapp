@@ -46,7 +46,13 @@ impl ElevatedExecutor for MacOsElevatedExecutor {
             .map_err(|e| format!("failed to launch osascript: {e}"))?;
 
         if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            // AppleScript's `do shell script` returns captured output as an
+            // AppleScript string, which translates Unix LF ('\n') line
+            // endings to classic Mac CR ('\r') — a long-standing, documented
+            // quirk. Translate them back so line-oriented parsing of this
+            // output (e.g. extract_marker_exit's use of str::lines(), which
+            // does not treat a bare '\r' as a line break) works correctly.
+            Ok(String::from_utf8_lossy(&output.stdout).replace('\r', "\n"))
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if stderr.contains("User canceled") || stderr.contains("-128") {
@@ -143,6 +149,7 @@ pub struct WriteOutcome {
 
 const MV_MARKER: &str = "HM_MV_EXIT";
 const FLUSH_MARKER: &str = "HM_FLUSH_EXIT";
+const INSTALL_MARKER: &str = "HM_INSTALL_EXIT";
 
 /// Runs only a DNS flush, elevated, with no file write. Backs the
 /// standalone "Flush DNS now" action.
@@ -179,10 +186,14 @@ pub fn write_hosts_file(
     let mv_exit = extract_marker_exit(&stdout, MV_MARKER);
     let flush_exit = flush_cmd.map(|_| extract_marker_exit(&stdout, FLUSH_MARKER));
 
-    Ok(WriteOutcome {
+    let outcome = WriteOutcome {
         write_ok: mv_exit == Some(0),
         flush_ok: flush_exit.map(|e| e == Some(0)),
-    })
+    };
+    if !outcome.write_ok {
+        eprintln!("elevated hosts-file write failed; raw shell output:\n{stdout}");
+    }
+    Ok(outcome)
 }
 
 fn extract_marker_exit(stdout: &str, marker: &str) -> Option<i32> {
@@ -206,6 +217,7 @@ pub fn install_helper_and_write(
     executor: &dyn ElevatedExecutor,
     helper_binary_src: &Path,
     plist_staging: &Path,
+    token_staging: &Path,
     hosts_staging: &Path,
     hosts_path: &Path,
     flush_cmd: Option<&str>,
@@ -215,11 +227,23 @@ pub fn install_helper_and_write(
         helper_protocol::HELPER_INSTALL_DIR,
         helper_protocol::HELPER_BINARY_NAME
     );
+    // The token must land at its root-owned, mode-0600 destination *before*
+    // the daemon (re)starts, since it only reads that file once at its own
+    // startup. Restarting an *already-loaded* daemon must not use
+    // `bootout` followed immediately by `bootstrap`: `bootout` only signals
+    // the old instance and returns before launchd finishes tearing it down
+    // (macOS schedules that cleanup ~5s later), so an immediate `bootstrap`
+    // can race it and fail with "service already loaded". Try `bootstrap`
+    // first (the common first-install case, nothing loaded yet); if that
+    // fails because it's already loaded, `kickstart -k` synchronously
+    // kills-and-restarts the existing instance in place instead.
     let install_chain = format!(
-        "mkdir -p {installdir} && cp {src} {dest} && chown root:wheel {dest} && chmod 755 {dest} && cp {plist_src} {plist_dest} && chown root:wheel {plist_dest} && chmod 644 {plist_dest} && (launchctl bootout system/{label} 2>/dev/null; launchctl bootstrap system {plist_dest})",
+        "mkdir -p {installdir} && cp {src} {dest} && chown root:wheel {dest} && chmod 755 {dest} && cp {token_src} {token_dest} && chown root:wheel {token_dest} && chmod 600 {token_dest} && cp {plist_src} {plist_dest} && chown root:wheel {plist_dest} && chmod 644 {plist_dest} && (launchctl bootstrap system {plist_dest} 2>/dev/null || launchctl kickstart -k system/{label})",
         installdir = shell_quote(helper_protocol::HELPER_INSTALL_DIR),
         src = shell_quote(&helper_binary_src.to_string_lossy()),
         dest = shell_quote(&dest),
+        token_src = shell_quote(&token_staging.to_string_lossy()),
+        token_dest = shell_quote(helper_protocol::HELPER_TOKEN_PATH),
         plist_src = shell_quote(&plist_staging.to_string_lossy()),
         plist_dest = shell_quote(helper_protocol::LAUNCH_DAEMON_PLIST_PATH),
         label = helper_protocol::HELPER_LABEL,
@@ -230,21 +254,35 @@ pub fn install_helper_and_write(
         shell_quote(&hosts_staging.to_string_lossy()),
         shell_quote(&hosts_path.to_string_lossy())
     );
-    let full_cmd = match flush_cmd {
+    // Each stage's exit code is captured into a shell variable and echoed
+    // unconditionally (via `;`, and inside an explicit if/else rather than
+    // relying on `&&` short-circuiting to skip straight to a later echo),
+    // so every marker is guaranteed to appear in the output exactly once —
+    // this is deliberately more verbose than a chained `&&`/`;` one-liner
+    // specifically so a failure's exact stage is never ambiguous.
+    let mv_and_flush = match flush_cmd {
         Some(flush) => format!(
-            "{install_chain} && {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; {{ {flush} ; }} ; echo {FLUSH_MARKER}:$?"
+            "if [ \"$ic\" -eq 0 ]; then {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; else echo {MV_MARKER}:$ic ; fi ; {{ {flush} ; }} ; echo {FLUSH_MARKER}:$?"
         ),
-        None => format!("{install_chain} && {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$?"),
+        None => format!("if [ \"$ic\" -eq 0 ]; then {{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; else echo {MV_MARKER}:$ic ; fi"),
     };
+    let full_cmd = format!("{{ {install_chain} ; }} ; ic=$? ; echo {INSTALL_MARKER}:$ic ; {mv_and_flush}");
 
     let stdout = executor.run_privileged_shell(&full_cmd)?;
+    let install_exit = extract_marker_exit(&stdout, INSTALL_MARKER);
     let mv_exit = extract_marker_exit(&stdout, MV_MARKER);
     let flush_exit = flush_cmd.map(|_| extract_marker_exit(&stdout, FLUSH_MARKER));
 
-    Ok(WriteOutcome {
+    let outcome = WriteOutcome {
         write_ok: mv_exit == Some(0),
         flush_ok: flush_exit.map(|e| e == Some(0)),
-    })
+    };
+    if !outcome.write_ok {
+        eprintln!(
+            "helper install + hosts-file write failed (install stage exit: {install_exit:?}); raw shell output:\n{stdout}"
+        );
+    }
+    Ok(outcome)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -252,6 +290,7 @@ pub fn install_helper_and_write(
     _executor: &dyn ElevatedExecutor,
     _helper_binary_src: &Path,
     _plist_staging: &Path,
+    _token_staging: &Path,
     _hosts_staging: &Path,
     _hosts_path: &Path,
     _flush_cmd: Option<&str>,
@@ -267,7 +306,7 @@ pub fn install_helper_and_write(
 #[cfg(target_os = "macos")]
 pub fn build_uninstall_command() -> String {
     format!(
-        "launchctl bootout system/{label} 2>/dev/null; rm -f {plist} {bin}",
+        "launchctl bootout system/{label} 2>/dev/null; rm -f {plist} {bin} {token}",
         label = helper_protocol::HELPER_LABEL,
         plist = shell_quote(helper_protocol::LAUNCH_DAEMON_PLIST_PATH),
         bin = shell_quote(&format!(
@@ -275,6 +314,7 @@ pub fn build_uninstall_command() -> String {
             helper_protocol::HELPER_INSTALL_DIR,
             helper_protocol::HELPER_BINARY_NAME
         )),
+        token = shell_quote(helper_protocol::HELPER_TOKEN_PATH),
     )
 }
 

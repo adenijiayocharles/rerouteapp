@@ -16,7 +16,7 @@ mod watcher;
 use rusqlite::Connection;
 use tauri::Manager;
 
-use state::AppState;
+use state::{AppState, PoisonRecoverExt};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -67,7 +67,7 @@ pub fn run() {
 
             let initial_entries = {
                 let state = app.state::<AppState>();
-                let conn = state.read_conn.lock().unwrap();
+                let conn = state.read_conn.lock_recover();
                 store::list_entries(&conn).unwrap_or_default()
             };
             if let Err(e) = tray::build(app.handle(), &initial_entries) {
@@ -75,6 +75,17 @@ pub fn run() {
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window must not exit the process: the tray icon,
+            // the hosts-file watcher, and autostart-at-login only make sense
+            // if the app keeps running as a menu bar utility after the
+            // window is dismissed. Real exit goes through the tray's own
+            // "Quit" item (PredefinedMenuItem::quit) instead.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::entries::list_entries,

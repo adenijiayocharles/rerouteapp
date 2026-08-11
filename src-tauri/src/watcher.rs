@@ -4,10 +4,11 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
+
+use crate::state::PoisonRecoverExt;
 
 pub const HOSTS_FILE_CHANGED_EXTERNALLY_EVENT: &str = "hosts-file-changed-externally";
 
@@ -42,7 +43,7 @@ pub fn start_watching(
         };
 
         {
-            let mut seen = last_observed.lock().unwrap();
+            let mut seen = last_observed.lock_recover();
             if seen.as_deref() == Some(current.as_str()) {
                 // Nothing actually changed since we last looked; don't
                 // treat this as either our own write landing or an
@@ -52,7 +53,7 @@ pub fn start_watching(
             *seen = Some(current.clone());
         }
 
-        let mut guard = last_written.lock().unwrap();
+        let mut guard = last_written.lock_recover();
         if guard.as_deref() == Some(current.as_str()) {
             // This is our own write settling; ignore it, and clear the
             // guard so a later external write that happens to reproduce
@@ -65,9 +66,12 @@ pub fn start_watching(
         let _ = app.emit(HOSTS_FILE_CHANGED_EXTERNALLY_EVENT, ());
     })?;
 
-    watcher.configure(
-        notify::Config::default().with_poll_interval(Duration::from_millis(500)),
-    )?;
+    // No `.configure(...)` call here: `RecommendedWatcher` resolves to a
+    // native OS event backend on every platform this app targets (FSEvents
+    // on macOS, inotify on Linux, ReadDirectoryChangesW on Windows), none
+    // of which read `with_poll_interval` — that option only affects the
+    // separate, unused `PollWatcher` fallback backend, so setting it here
+    // would be a no-op that misleadingly implies a polling cadence.
 
     let watch_target = hosts_file_watch_target();
     watcher.watch(&watch_target, RecursiveMode::NonRecursive)?;

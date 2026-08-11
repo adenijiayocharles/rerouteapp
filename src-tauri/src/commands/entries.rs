@@ -5,24 +5,24 @@
 use tauri::{AppHandle, State};
 
 use super::{
-    auto_flush_dns_enabled, backup_and_write, draft_to_entry, flush_message_for, group_propagation_plans,
-    normalize_draft_hostname, prune_history, validate_draft, WriteResult,
+    auto_flush_dns_enabled, backup_and_write, contains_control_chars, draft_to_entry, flush_message_for,
+    group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, WriteResult,
 };
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry};
-use crate::state::AppState;
+use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 use crate::validate;
 
 #[tauri::command]
 pub fn list_entries(state: State<AppState>) -> Result<Vec<Entry>, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     store::list_entries(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_history(state: State<AppState>) -> Result<Vec<HistoryEntry>, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     store::list_history(&conn).map_err(|e| e.to_string())
 }
 
@@ -46,8 +46,11 @@ pub fn rename_group(app: AppHandle, state: State<AppState>, old_name: String, ne
     if new_name.is_empty() {
         return Err("Group name can\u{2019}t be empty.".to_string());
     }
+    if contains_control_chars(&new_name) {
+        return Err("Group name can\u{2019}t contain control characters or line breaks.".to_string());
+    }
 
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock_recover();
     if old_name != new_name {
         store::rename_group(&conn, &old_name, &new_name).map_err(|e| e.to_string())?;
     }
@@ -64,7 +67,7 @@ pub fn rename_group(app: AppHandle, state: State<AppState>, old_name: String, ne
 pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<DiffPreview, String> {
     normalize_draft_hostname(&mut draft);
     validate_draft(&draft)?;
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     let is_new = draft.id.is_none();
     let before = match &draft.id {
         Some(id) => store::get_entry(&conn, id).map_err(|e| e.to_string())?,
@@ -104,7 +107,7 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
     validate_draft(&draft)?;
     let is_new = draft.id.is_none();
 
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let before_snapshot = match &draft.id {
@@ -177,7 +180,7 @@ pub fn switch_active_ip(
     entry_id: String,
     ip_id: String,
 ) -> Result<WriteResult, String> {
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let before = store::get_entry(&tx, &entry_id)
@@ -223,7 +226,7 @@ pub fn switch_active_ip(
 
 #[tauri::command]
 pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) -> Result<WriteResult, String> {
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let before = store::get_entry(&tx, &entry_id)
@@ -261,7 +264,7 @@ pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) 
 /// Read-only diff for the History view's "View diff" button (no restore).
 #[tauri::command]
 pub fn history_diff(state: State<AppState>, history_id: String) -> Result<DiffPreview, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     let h = store::get_history_entry(&conn, &history_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "History entry not found.".to_string())?;
@@ -285,7 +288,7 @@ pub fn history_diff(state: State<AppState>, history_id: String) -> Result<DiffPr
 
 #[tauri::command]
 pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<DiffPreview, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     let h = store::get_history_entry(&conn, &history_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "History entry not found.".to_string())?;
@@ -324,7 +327,7 @@ pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<Dif
 
 #[tauri::command]
 pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: String) -> Result<WriteResult, String> {
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let h = store::get_history_entry(&tx, &history_id)
@@ -382,7 +385,7 @@ pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: Strin
 /// `preview_restore`'s removal case).
 #[tauri::command]
 pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPreview, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     let entry = store::get_entry(&conn, &entry_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Entry not found.".to_string())?;
@@ -407,7 +410,7 @@ pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPr
 
 #[tauri::command]
 pub fn confirm_delete(app: AppHandle, state: State<AppState>, entry_id: String) -> Result<WriteResult, String> {
-    let mut conn = state.conn.lock().unwrap();
+    let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     let before = store::get_entry(&tx, &entry_id)

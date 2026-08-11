@@ -5,17 +5,17 @@
 
 use tauri::State;
 
-use crate::state::AppState;
+use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 
 #[tauri::command]
 pub fn get_setting(state: State<AppState>, key: String) -> Result<Option<String>, String> {
-    let conn = state.read_conn.lock().unwrap();
+    let conn = state.read_conn.lock_recover();
     store::get_setting(&conn, &key).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_setting(state: State<AppState>, key: String, value: String) -> Result<(), String> {
-    let conn = state.conn.lock().unwrap();
+    let conn = state.conn.lock_recover();
     store::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
 }

@@ -13,8 +13,9 @@ use crate::state::AppState;
 /// triggers a daemon install — that only happens on an actual write).
 #[tauri::command]
 pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
-    if helper_client::ping() {
-        return match helper_client::flush_dns() {
+    let client_token = helper_client::load_token(&state.app_data_dir);
+    if let Some(token) = client_token.as_deref().filter(|t| helper_client::ping(t)) {
+        return match helper_client::flush_dns(token) {
             Ok(()) => Ok(WriteResult {
                 entry: None,
                 flush_ok: Some(true),

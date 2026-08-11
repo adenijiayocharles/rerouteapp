@@ -1,13 +1,31 @@
 //! One-time installation of the privileged helper daemon, combined with
 //! the write that triggered it, so a single admin prompt covers both.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
 use crate::elevate::{self, ElevatedExecutor, WriteOutcome};
+use crate::helper_client;
 use crate::hosts_parser;
 
+/// Generates a fresh 256-bit per-install auth token from the OS CSPRNG,
+/// hex-encoded. Minted on every (re)install, since `install_and_write` also
+/// restarts the daemon (`launchctl bootout` + `bootstrap`), so the new
+/// token always takes effect immediately.
+fn generate_token() -> Result<String, String> {
+    let mut f = std::fs::File::open("/dev/urandom").map_err(|e| format!("Failed to open /dev/urandom: {e}"))?;
+    let mut buf = [0u8; 32];
+    f.read_exact(&mut buf).map_err(|e| format!("Failed to read random bytes: {e}"))?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// `KeepAlive` only respawns the daemon after it exits non-zero (a crash),
+/// not after every exit — `main`'s accept loop only returns via `expect()`
+/// on bind failure, so this just avoids an unconditional respawn loop if
+/// that ever happens repeatedly. `ThrottleInterval` adds an explicit
+/// minimum gap between respawns on top of launchd's own default backoff.
 const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -21,7 +39,12 @@ const PLIST_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
 </dict>
 </plist>
 "#;
@@ -73,18 +96,51 @@ pub fn install_and_write(
     std::fs::write(&plist_staging, &plist_content)
         .map_err(|e| format!("Failed to stage the helper's launchd plist: {e}"))?;
 
+    let token = generate_token()?;
+    let token_staging = staging_dir.join(".staging-helper-token");
+    std::fs::write(&token_staging, &token)
+        .map_err(|e| format!("Failed to stage the helper auth token: {e}"))?;
+
     let hosts_staging = staging_dir.join(".staging-hosts");
     hosts_parser::atomic_write(&hosts_staging, hosts_content)
         .map_err(|e| format!("Failed to stage the hosts file: {e}"))?;
 
-    elevate::install_helper_and_write(
+    let outcome = elevate::install_helper_and_write(
         executor,
         &helper_src,
         &plist_staging,
+        &token_staging,
         &hosts_staging,
         hosts_path,
         flush_cmd,
-    )
+    )?;
+
+    // Only persist the client's own copy once the elevated install chain
+    // (which writes the daemon's root-owned copy at the same token value)
+    // has actually succeeded — otherwise a stale/mismatched local copy
+    // could mask a still-good previous install.
+    if outcome.write_ok {
+        match app.path().app_data_dir() {
+            Ok(app_data_dir) => {
+                let token_path = app_data_dir.join(helper_client::CLIENT_TOKEN_FILENAME);
+                match std::fs::write(&token_path, &token) {
+                    Ok(()) => {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if let Err(e) = std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600)) {
+                                eprintln!("failed to set permissions on {token_path:?}: {e}");
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("failed to persist client-side helper token to {token_path:?}: {e}"),
+                }
+            }
+            Err(e) => eprintln!("failed to resolve app data dir to persist the client-side helper token: {e}"),
+        }
+    }
+
+    Ok(outcome)
 }
 
 #[cfg(not(target_os = "macos"))]
