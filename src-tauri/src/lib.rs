@@ -15,6 +15,7 @@ mod watcher;
 
 use rusqlite::Connection;
 use tauri::Manager;
+use tauri_plugin_notification::NotificationExt;
 
 use state::{AppState, PoisonRecoverExt};
 
@@ -28,7 +29,25 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            // Requested once at startup rather than lazily on the first
+            // tray-triggered switch, so the OS permission prompt (if the
+            // user hasn't already granted/denied it) doesn't surprise them
+            // in the middle of a quick menu-bar action.
+            match app.notification().permission_state() {
+                Ok(state) => {
+                    eprintln!("notification permission state at startup: {state:?}");
+                    if state != tauri_plugin_notification::PermissionState::Granted {
+                        match app.notification().request_permission() {
+                            Ok(state) => eprintln!("notification permission state after request: {state:?}"),
+                            Err(e) => eprintln!("notification permission request failed: {e}"),
+                        }
+                    }
+                }
+                Err(e) => eprintln!("failed to read notification permission state: {e}"),
+            }
+
             let app_data_dir = app
                 .path()
                 .app_data_dir()

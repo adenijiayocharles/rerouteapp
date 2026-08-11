@@ -15,6 +15,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, Wry,
 };
+use tauri_plugin_notification::NotificationExt;
 
 use crate::commands;
 use crate::models::Entry;
@@ -132,8 +133,39 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         };
         let app_handle = app.clone();
         let state = app.state::<AppState>();
-        if let Err(e) = commands::entries::switch_active_ip(app_handle, state, entry_id.to_string(), ip_id.to_string()) {
-            eprintln!("tray: switch active IP failed: {e}");
+        match commands::entries::switch_active_ip(app_handle, state, entry_id.to_string(), ip_id.to_string()) {
+            Ok(result) => notify_switch(app, &result),
+            Err(e) => eprintln!("tray: switch active IP failed: {e}"),
         }
+    }
+}
+
+/// Confirms a tray-triggered IP switch (and its DNS flush) with a system
+/// notification. The tray menu is meant to work without the main window
+/// open, so without this a background switch would otherwise have no
+/// visible confirmation at all — unlike a window-triggered switch, which
+/// already shows an in-app toast.
+fn notify_switch(app: &AppHandle, result: &commands::WriteResult) {
+    let Some(entry) = &result.entry else { return };
+    let Some(active_ip) = entry.ips.iter().find(|ip| ip.id == entry.active_ip_id) else {
+        return;
+    };
+
+    // Reuses the same wording `flush_message_for` already produces for the
+    // in-app toast on a window-triggered switch, so a flush failure (or "no
+    // supported resolver") reads identically in both places. When there's
+    // no message (flush succeeded, or auto-flush is off), fall back to a
+    // plain confirmation of the switch itself.
+    let body = match &result.flush_message {
+        Some(msg) => msg.clone(),
+        None if result.flush_ok == Some(true) => {
+            format!("{} now resolves to {}. DNS cache flushed.", entry.hostname, active_ip.ip)
+        }
+        None => format!("{} now resolves to {}.", entry.hostname, active_ip.ip),
+    };
+
+    match app.notification().builder().title("re:route").body(body).show() {
+        Ok(()) => eprintln!("tray: notification shown (permission state: {:?})", app.notification().permission_state()),
+        Err(e) => eprintln!("tray: failed to show notification: {e}"),
     }
 }
