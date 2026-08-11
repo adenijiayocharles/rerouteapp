@@ -114,7 +114,7 @@ export const EntryRow = memo(function EntryRow({
         </button>
       </div>
 
-      <div style={{ minWidth: 0, textAlign: "center" }}>
+      <div style={{ minWidth: 0 }}>
         <div
           style={{
             fontFamily: "'JetBrains Mono',monospace",
