@@ -19,6 +19,7 @@ import { OnboardingModal } from "./components/OnboardingModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const ENTRIES_CHANGED_EVENT = "entries-changed";
+const MENU_ACTION_EVENT = "menu-action";
 const THEME_STORAGE_KEY = "reroute-theme";
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
@@ -680,6 +681,29 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     listen(ENTRIES_CHANGED_EVENT, () => {
       refreshEntries().catch(() => {});
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    // The native File menu mirrors a handful of in-app actions so they're
+    // reachable without the window already being focused on the right view.
+    let unlisten: (() => void) | undefined;
+    listen<string>(MENU_ACTION_EVENT, (event) => {
+      switch (event.payload) {
+        case "add-entry":
+          dispatch({ type: "OPEN_ADD_PANEL" });
+          break;
+        case "flush-dns":
+          handleFlushDns();
+          break;
+        case "open-raw-file":
+          dispatch({ type: "GO_RAW" });
+          refreshRawFile().catch(() => {});
+          break;
+      }
     }).then((fn) => {
       unlisten = fn;
     });

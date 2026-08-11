@@ -1,3 +1,4 @@
+mod app_menu;
 mod commands;
 mod diff;
 mod dns_flush;
@@ -30,6 +31,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
+        .menu(app_menu::build)
+        .on_menu_event(app_menu::handle_menu_event)
         .setup(|app| {
             // Requested once at startup rather than lazily on the first
             // tray-triggered switch, so the OS permission prompt (if the
