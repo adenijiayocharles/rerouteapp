@@ -103,7 +103,7 @@ export function Sidebar({
       <div style={{ padding: 10, fontSize: 11, color: c.textFaint, lineHeight: 1.5 }}>
         /etc/hosts
         <br />
-        Managed by Reroute
+        Managed by re:route
       </div>
     </div>
   );

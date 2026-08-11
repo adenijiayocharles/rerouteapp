@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Reroute",
+        "title": "re:route",
         "width": 1180,
         "height": 760,
         "minWidth": 900,

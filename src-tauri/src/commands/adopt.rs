@@ -79,9 +79,9 @@ pub fn preview_adopt(state: State<AppState>, id: String) -> Result<DiffPreview, 
         many => format!("Adopt {} entries", many.len()),
     };
     let subtitle = if after_entries.len() > 1 {
-        "Move these entries from outside the managed block into Reroute, one hostname per line.".to_string()
+        "Move these entries from outside the managed block into re:route, one hostname per line.".to_string()
     } else {
-        "Move this entry from outside the managed block into Reroute.".to_string()
+        "Move this entry from outside the managed block into re:route.".to_string()
     };
 
     Ok(DiffPreview {

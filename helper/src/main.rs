@@ -1,4 +1,4 @@
-//! Privileged helper daemon for Reroute. Installed once (as root,
+//! Privileged helper daemon for re:route. Installed once (as root,
 //! via a LaunchDaemon) so the main app never needs a per-write admin
 //! prompt again. Deliberately minimal: it exposes exactly two operations
 //! — overwrite the hosts file, flush DNS — both hardcoded here, never

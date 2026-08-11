@@ -39,7 +39,7 @@ pub fn build(app: &AppHandle, entries: &[Entry]) -> tauri::Result<()> {
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("Reroute")
+        .tooltip("re:route")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(handle_menu_event)
@@ -83,7 +83,7 @@ fn build_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItemBuilder::with_id(FLUSH_DNS_ID, "Flush DNS Now").build(app)?)?;
-    menu.append(&MenuItemBuilder::with_id(OPEN_WINDOW_ID, "Open Reroute").build(app)?)?;
+    menu.append(&MenuItemBuilder::with_id(OPEN_WINDOW_ID, "Open re:route").build(app)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&PredefinedMenuItem::quit(app, Some("Quit"))?)?;
 

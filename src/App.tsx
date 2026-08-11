@@ -573,7 +573,7 @@ export default function App() {
             toast: {
               type: "info",
               title: "Update available",
-              message: progress !== null ? `Downloading Reroute v${update.version}… ${progress}%` : `Downloading Reroute v${update.version}…`,
+              message: progress !== null ? `Downloading re:route v${update.version}… ${progress}%` : `Downloading re:route v${update.version}…`,
             },
           });
         }
@@ -584,7 +584,7 @@ export default function App() {
         toast: {
           type: "info",
           title: "Update ready",
-          message: `Restart Reroute to finish installing v${update.version}.`,
+          message: `Restart re:route to finish installing v${update.version}.`,
           updateAction: { label: "Restart", onClick: handleInstallUpdate },
         },
       });
@@ -605,7 +605,7 @@ export default function App() {
             toast: {
               type: "success",
               title: "You're up to date",
-              message: state.appVersion ? `Reroute v${state.appVersion} is the latest version.` : "You have the latest version.",
+              message: state.appVersion ? `re:route v${state.appVersion} is the latest version.` : "You have the latest version.",
             },
           });
         }
@@ -619,7 +619,7 @@ export default function App() {
         toast: {
           type: "info",
           title: "Update available",
-          message: `Reroute v${update.version} is ready to download.`,
+          message: `re:route v${update.version} is ready to download.`,
           updateAction: { label: "Download", onClick: handleDownloadUpdate },
         },
       });
@@ -810,7 +810,7 @@ export default function App() {
     refreshHelperStatus().catch(() => {});
     dispatch({
       type: "SET_TOAST",
-      toast: { type: "success", title: "Entries adopted", message: `${ids.length} ${ids.length === 1 ? "entry is" : "entries are"} now managed by Reroute.` },
+      toast: { type: "success", title: "Entries adopted", message: `${ids.length} ${ids.length === 1 ? "entry is" : "entries are"} now managed by re:route.` },
     });
   }
 
@@ -860,8 +860,8 @@ export default function App() {
             title: adopted.length === 1 ? "Entry adopted" : "Entries adopted",
             message:
               adopted.length === 1
-                ? `${adopted[0]?.hostname ?? "The entry"} is now managed by Reroute.`
-                : `${adopted.length} entries are now managed by Reroute.`,
+                ? `${adopted[0]?.hostname ?? "The entry"} is now managed by re:route.`
+                : `${adopted.length} entries are now managed by re:route.`,
           },
         });
       } else if (diff.mode === "restore" && pendingRestoreId) {

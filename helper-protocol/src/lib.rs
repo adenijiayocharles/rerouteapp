@@ -1,4 +1,4 @@
-//! Wire protocol shared between the Reroute app and its privileged
+//! Wire protocol shared between the re:route app and its privileged
 //! helper daemon. Kept deliberately narrow: the daemon never executes a
 //! client-supplied shell command or path — only these two fixed
 //! operations — so there is no command/argument injection surface even

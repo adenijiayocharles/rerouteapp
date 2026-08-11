@@ -66,7 +66,7 @@ export function OnboardingModal({ c, entries, onAdopt, onSkip }: OnboardingModal
         }}
       >
         <div style={{ padding: "22px 24px 4px", flex: "none" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: c.text }}>Welcome to Reroute</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: c.text }}>Welcome to re:route</div>
           <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 4, lineHeight: 1.5 }}>
             We found {entries.length} {entries.length === 1 ? "entry" : "entries"} already in your hosts file. Choose
             which ones to bring under management here.

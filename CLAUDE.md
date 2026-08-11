@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Reroute is a cross-platform (macOS/Windows/Linux, macOS-first) desktop app for managing `/etc/hosts` (or the
+re:route is a cross-platform (macOS/Windows/Linux, macOS-first) desktop app for managing `/etc/hosts` (or the
 Windows equivalent) through a GUI: multi-IP-per-hostname entries with one-click active-IP switching, automatic
 DNS cache flushing, diff-confirmed writes, history/rollback, and a raw-editor mode. Built with Tauri 2
 (Rust backend + React/TypeScript frontend) plus a separate privileged helper daemon for passwordless writes
