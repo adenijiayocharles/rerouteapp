@@ -16,7 +16,7 @@ interface EntryRowProps {
   onSwitchIp: (entryId: string, ipId: string) => void;
 }
 
-const gridTemplate = "44px minmax(0,2fr) minmax(0,1.7fr) minmax(0,1fr) 110px 40px";
+const gridTemplate = "44px minmax(0,2fr) minmax(0,1.7fr) 110px 40px";
 
 // Memoized so a re-render caused by unrelated state (typing in the search
 // box, editing the raw file, etc.) doesn't re-render every row and
@@ -234,17 +234,6 @@ export const EntryRow = memo(function EntryRow({
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: 12.5,
-          color: c.textMuted,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {entry.comment || "—"}
-      </div>
       <div style={{ fontSize: 11.5, color: c.textFaint }}>{entry.lastModified}</div>
       <div style={{ position: "relative" }} ref={menuRef}>
         <button

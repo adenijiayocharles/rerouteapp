@@ -4,16 +4,6 @@ interface IconProps {
   strokeWidth?: number;
 }
 
-export function TrayIcon({ size = 16, color = "currentColor" }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round">
-      <rect x="3" y="4" width="18" height="14" rx="2" />
-      <line x1="3" y1="9" x2="21" y2="9" />
-      <circle cx="7" cy="6.3" r="0.6" fill={color} stroke="none" />
-    </svg>
-  );
-}
-
 export function SunIcon({ size = 16, color = "currentColor" }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">

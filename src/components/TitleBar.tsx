@@ -1,17 +1,10 @@
 import { useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ColorTokens } from "../theme";
-import type { Entry } from "../types";
-import { GearIcon, TrayIcon } from "./icons";
-import { QuickSwitchTray } from "./QuickSwitchTray";
+import { GearIcon } from "./icons";
 
 interface TitleBarProps {
   c: ColorTokens;
-  trayOpen: boolean;
-  onToggleTray: () => void;
-  onCloseTray: () => void;
-  entries: Entry[];
-  onSwitchIp: (entryId: string, ipId: string) => void;
   onFlushDns: () => void;
   onOpenSettings: () => void;
 }
@@ -80,16 +73,7 @@ function TrafficLight({
   );
 }
 
-export function TitleBar({
-  c,
-  trayOpen,
-  onToggleTray,
-  onCloseTray,
-  entries,
-  onSwitchIp,
-  onFlushDns,
-  onOpenSettings,
-}: TitleBarProps) {
+export function TitleBar({ c, onFlushDns, onOpenSettings }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -124,20 +108,6 @@ export function TitleBar({
           <polyline points="21 3 21 9 15 9" />
         </svg>
       </button>
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={onToggleTray}
-          title="Quick switcher"
-          style={titleBarButtonStyle(c)}
-          onMouseEnter={(e) => (e.currentTarget.style.background = c.rowHover)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = c.trayBtnBg)}
-        >
-          <TrayIcon color={c.textMuted} />
-        </button>
-        {trayOpen && (
-          <QuickSwitchTray c={c} entries={entries} onSwitchIp={onSwitchIp} onClose={onCloseTray} />
-        )}
-      </div>
       <button
         onClick={onOpenSettings}
         title="Settings"

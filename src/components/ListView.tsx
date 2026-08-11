@@ -148,7 +148,6 @@ export function ListView({
           <div />
           <div>Hostname</div>
           <div>Active IP</div>
-          <div>Comment</div>
           <div>Modified</div>
           <div />
         </div>

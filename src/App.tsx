@@ -56,7 +56,6 @@ interface State {
   rawFileContent: string | null;
   rawDraftContent: string | null;
   toast: ToastState | null;
-  trayOpen: boolean;
   externalChangeDetected: boolean;
   helperActive: boolean;
   helperEnabled: boolean;
@@ -106,8 +105,6 @@ type Action =
   | { type: "SET_SEARCH"; value: string }
   | { type: "TOGGLE_IP_MENU"; id: string }
   | { type: "CLOSE_IP_MENU" }
-  | { type: "TOGGLE_TRAY" }
-  | { type: "CLOSE_TRAY" }
   | { type: "SET_FLUSHING"; id: string | null }
   | { type: "UPSERT_ENTRY"; entry: Entry }
   | { type: "REMOVE_ENTRY"; id: string }
@@ -158,7 +155,6 @@ const initialState: State = {
   rawFileContent: null,
   rawDraftContent: null,
   toast: null,
-  trayOpen: false,
   externalChangeDetected: false,
   helperActive: false,
   helperEnabled: true,
@@ -255,17 +251,17 @@ function reducer(state: State, action: Action): State {
     case "SET_SYSTEM_PREFERS_DARK":
       return { ...state, systemPrefersDark: action.prefersDark };
     case "GO_LIST":
-      return { ...state, view: "list", trayOpen: false, groupFilter: null };
+      return { ...state, view: "list", groupFilter: null };
     case "GO_HISTORY":
-      return { ...state, view: "history", trayOpen: false };
+      return { ...state, view: "history" };
     case "GO_RAW":
-      return { ...state, view: "raw", trayOpen: false };
+      return { ...state, view: "raw" };
     case "SET_RAW_FILE_CONTENT":
       return { ...state, rawFileContent: action.content, rawDraftContent: action.content };
     case "SET_RAW_DRAFT_CONTENT":
       return { ...state, rawDraftContent: action.content };
     case "SELECT_GROUP":
-      return { ...state, view: "list", trayOpen: false, groupFilter: action.group };
+      return { ...state, view: "list", groupFilter: action.group };
     case "CLEAR_GROUP_FILTER":
       return { ...state, groupFilter: null };
     case "RENAME_GROUP_FILTER":
@@ -276,10 +272,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, openIpMenuId: state.openIpMenuId === action.id ? null : action.id };
     case "CLOSE_IP_MENU":
       return { ...state, openIpMenuId: null };
-    case "TOGGLE_TRAY":
-      return { ...state, trayOpen: !state.trayOpen };
-    case "CLOSE_TRAY":
-      return { ...state, trayOpen: false };
     case "SET_FLUSHING":
       return { ...state, flushingId: action.id };
     case "UPSERT_ENTRY": {
@@ -1034,16 +1026,7 @@ export default function App() {
         "--hm-scroll-thumb": c.scrollThumb,
       }}
     >
-      <TitleBar
-        c={c}
-        trayOpen={state.trayOpen}
-        onToggleTray={() => dispatch({ type: "TOGGLE_TRAY" })}
-        onCloseTray={() => dispatch({ type: "CLOSE_TRAY" })}
-        entries={state.entries}
-        onSwitchIp={handleSwitchIp}
-        onFlushDns={handleFlushDns}
-        onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })}
-      />
+      <TitleBar c={c} onFlushDns={handleFlushDns} onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })} />
 
       {state.externalChangeDetected && (
         <ReloadBanner c={c} onReload={handleReload} onDismiss={() => dispatch({ type: "DISMISS_EXTERNAL_CHANGE" })} />
