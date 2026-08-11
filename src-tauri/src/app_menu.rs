@@ -7,6 +7,7 @@
 //! crate) with three extra File items wired to frontend actions.
 
 use tauri::{
+    image::Image,
     menu::{AboutMetadata, Menu, MenuEvent, MenuItemBuilder, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID},
     AppHandle, Emitter, Manager, Wry,
 };
@@ -14,6 +15,16 @@ use tauri::{
 const ADD_ENTRY_ID: &str = "menu-add-entry";
 const FLUSH_DNS_ID: &str = "menu-flush-dns";
 const OPEN_RAW_FILE_ID: &str = "menu-open-raw-file";
+
+/// The app name as shown in the About panel and its menu item, matching the
+/// in-app title (`TitleBar.tsx`) rather than `productName`/the crate name
+/// (which stay plain "Reroute" for the bundle/dock/window-manager identity).
+/// Doesn't affect the leftmost menu-bar label itself — macOS forces that to
+/// the running app's actual name regardless of the `Submenu` title passed
+/// here, so it still reads "Reroute".
+const APP_DISPLAY_NAME: &str = "re:route";
+
+const ABOUT_ICON_BYTES: &[u8] = include_bytes!("../icons/icon.png");
 
 /// Emitted with one of `"add-entry" | "flush-dns" | "open-raw-file"` so the
 /// frontend can dispatch into its own reducer the same way a click on the
@@ -24,10 +35,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let pkg_info = app.package_info();
     let config = app.config();
     let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
+        name: Some(APP_DISPLAY_NAME.to_string()),
         version: Some(pkg_info.version.to_string()),
         copyright: config.bundle.copyright.clone(),
         authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        icon: Some(Image::from_bytes(ABOUT_ICON_BYTES)?),
         ..Default::default()
     };
 
@@ -79,10 +91,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             &Submenu::with_items(
                 app,
-                pkg_info.name.clone(),
+                APP_DISPLAY_NAME,
                 true,
                 &[
-                    &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::about(app, Some(&format!("About {APP_DISPLAY_NAME}")), Some(about_metadata))?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::services(app, None)?,
                     &PredefinedMenuItem::separator(app)?,
