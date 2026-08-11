@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Reroute",
+  "productName": "reroute",
   "version": "0.3.0",
   "identifier": "com.reroute.app",
   "build": {
