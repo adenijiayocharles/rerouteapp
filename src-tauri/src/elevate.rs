@@ -12,13 +12,25 @@ use std::path::Path;
 pub trait ElevatedExecutor: Send + Sync {
     /// Runs a shell command with elevated privileges, returning combined
     /// stdout on success or a human-readable error message on failure
-    /// (including the user cancelling the elevation prompt).
+    /// (including the user cancelling the elevation prompt). `shell_cmd` is
+    /// written in the target OS's native scripting syntax (POSIX `sh` on
+    /// macOS/Linux, PowerShell on Windows) — see the `build_*` helpers below,
+    /// which are the only callers that should construct it.
     fn run_privileged_shell(&self, shell_cmd: &str) -> Result<String, String>;
 }
 
-/// Single-quotes a path for safe interpolation into a shell command.
+/// Single-quotes a path for safe interpolation into a POSIX shell command.
+#[cfg(unix)]
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// Single-quotes a path for safe interpolation into a PowerShell command
+/// (PowerShell's single-quoted strings are literal — no interpolation — so
+/// the only character that needs escaping is the quote itself, doubled).
+#[cfg(windows)]
+fn ps_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
 }
 
 #[cfg(target_os = "macos")]
@@ -70,29 +82,56 @@ pub struct WindowsElevatedExecutor;
 #[cfg(target_os = "windows")]
 impl ElevatedExecutor for WindowsElevatedExecutor {
     fn run_privileged_shell(&self, shell_cmd: &str) -> Result<String, String> {
-        // TODO: verify on Windows. Untested on this dev machine (macOS).
         // Launches an elevated PowerShell (triggers the standard UAC
-        // prompt) to run the command, writing its exit code to a temp file
-        // so we can detect failure across the elevation boundary.
+        // prompt) to run the command. `Start-Process -Verb RunAs` launches
+        // via ShellExecute, which cannot share pipes with this (unelevated)
+        // process — passing `-RedirectStandardOutput` alongside `-Verb`
+        // fails outright, since RunAs forces UseShellExecute=true while
+        // redirection requires it false. So instead, the elevated script
+        // redirects its own output to a temp file, which we read back here
+        // once `-Wait` returns control.
         use std::process::Command;
 
-        let ps_inner = shell_cmd.replace('\'', "''");
+        let out_path = std::env::temp_dir().join(format!(
+            "reroute-elevate-{}-{}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        let _ = std::fs::remove_file(&out_path);
+
+        // `*>` merges all output streams (success, error, warning, etc.)
+        // into the file so nothing gets lost across the elevation boundary.
+        let inner = format!("& {{ {shell_cmd} }} *> {}", ps_quote(&out_path.to_string_lossy()));
+        let ps_inner = inner.replace('\'', "''");
         let ps_command = format!(
-            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','{}'",
+            "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-WindowStyle','Hidden','-Command','{}'",
             ps_inner
         );
+
         let output = Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_command])
             .output()
             .map_err(|e| format!("failed to launch elevated PowerShell: {e}"))?;
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            Err(format!(
-                "Elevated command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ))
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            // UAC dismissal surfaces as a terminating error in the
+            // *unelevated* launcher process (Start-Process itself throws),
+            // carrying Win32 error 1223 (ERROR_CANCELLED) somewhere in the
+            // message.
+            return if stderr.contains("1223") || stderr.to_lowercase().contains("cancel") {
+                Err("Administrator access was cancelled.".to_string())
+            } else {
+                Err(format!("Elevated command failed: {stderr}"))
+            };
         }
+
+        let result = std::fs::read_to_string(&out_path).unwrap_or_default();
+        let _ = std::fs::remove_file(&out_path);
+        Ok(result)
     }
 }
 
@@ -102,8 +141,16 @@ pub struct LinuxElevatedExecutor;
 #[cfg(target_os = "linux")]
 impl ElevatedExecutor for LinuxElevatedExecutor {
     fn run_privileged_shell(&self, shell_cmd: &str) -> Result<String, String> {
-        // TODO: verify on Linux. Untested on this dev machine (macOS).
-        // pkexec shows the desktop environment's native polkit prompt.
+        // pkexec shows the desktop environment's native polkit prompt, then
+        // runs `shell_cmd` as-is via `sh -c` (passed directly as an argv
+        // element, so — unlike the macOS/Windows executors — no extra
+        // string-literal escaping layer is needed here). Its own exit code
+        // mirrors the launched command's, *except* per pkexec(1): 127 means
+        // authorization couldn't be obtained (dialog dismissed or denied)
+        // and 126 means authentication failed (e.g. wrong password entered
+        // too many times) — both surfaced as a cancellation, since our
+        // wrapped script always ends by echoing a marker and so otherwise
+        // exits 0 regardless of the mv/flush outcome.
         use std::process::Command;
 
         let output = Command::new("pkexec")
@@ -154,33 +201,42 @@ const INSTALL_MARKER: &str = "HM_INSTALL_EXIT";
 /// Runs only a DNS flush, elevated, with no file write. Backs the
 /// standalone "Flush DNS now" action.
 pub fn run_flush_only(executor: &dyn ElevatedExecutor, flush_cmd: &str) -> Result<bool, String> {
-    let full_cmd = format!("{{ {flush_cmd} ; }} ; echo {FLUSH_MARKER}:$?");
+    let full_cmd = build_flush_only_script(flush_cmd);
     let stdout = executor.run_privileged_shell(&full_cmd)?;
     Ok(extract_marker_exit(&stdout, FLUSH_MARKER) == Some(0))
+}
+
+#[cfg(unix)]
+fn build_flush_only_script(flush_cmd: &str) -> String {
+    format!("{{ {flush_cmd} ; }} ; echo {FLUSH_MARKER}:$?")
+}
+
+// PowerShell's `$?` reflects the last statement as a boolean, not a numeric
+// exit code, and native commands like `ipconfig` only populate
+// `$LASTEXITCODE` — so unlike the POSIX builder above, success/failure is
+// captured explicitly with try/catch rather than by echoing `$?` verbatim.
+#[cfg(windows)]
+fn build_flush_only_script(flush_cmd: &str) -> String {
+    format!(
+        "try {{ {flush_cmd} ; if ($LASTEXITCODE -ne 0) {{ throw 'flush failed' }} ; Write-Output '{FLUSH_MARKER}:0' }} catch {{ Write-Output '{FLUSH_MARKER}:1' }}"
+    )
 }
 
 /// Moves `tmp_path` over `hosts_path` with elevated privileges, then
 /// (optionally) runs `flush_cmd` in the same elevated shell so a single
 /// admin prompt covers the whole action. The two steps are sequenced with
 /// `;`, not `&&`, and their exit codes are captured via markers in stdout,
-/// so a flush failure is reported without masking a successful write.
+/// so a flush failure is reported without masking a successful write. The
+/// script text itself is built per-OS (POSIX `sh` vs. PowerShell) since the
+/// two aren't remotely compatible — see the `build_move_and_flush_script`
+/// variants below.
 pub fn write_hosts_file(
     executor: &dyn ElevatedExecutor,
     tmp_path: &Path,
     hosts_path: &Path,
     flush_cmd: Option<&str>,
 ) -> Result<WriteOutcome, String> {
-    let mv_cmd = format!(
-        "mv -f {} {}",
-        shell_quote(&tmp_path.to_string_lossy()),
-        shell_quote(&hosts_path.to_string_lossy())
-    );
-    let full_cmd = match flush_cmd {
-        Some(flush) => format!(
-            "{{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; {{ {flush} ; }} ; echo {FLUSH_MARKER}:$?"
-        ),
-        None => format!("{{ {mv_cmd} ; }} ; echo {MV_MARKER}:$?"),
-    };
+    let full_cmd = build_move_and_flush_script(tmp_path, hosts_path, flush_cmd);
 
     let stdout = executor.run_privileged_shell(&full_cmd)?;
     let mv_exit = extract_marker_exit(&stdout, MV_MARKER);
@@ -194,6 +250,46 @@ pub fn write_hosts_file(
         eprintln!("elevated hosts-file write failed; raw shell output:\n{stdout}");
     }
     Ok(outcome)
+}
+
+#[cfg(unix)]
+fn build_move_and_flush_script(tmp_path: &Path, hosts_path: &Path, flush_cmd: Option<&str>) -> String {
+    let mv_cmd = format!(
+        "mv -f {} {}",
+        shell_quote(&tmp_path.to_string_lossy()),
+        shell_quote(&hosts_path.to_string_lossy())
+    );
+    match flush_cmd {
+        Some(flush) => format!(
+            "{{ {mv_cmd} ; }} ; echo {MV_MARKER}:$? ; {{ {flush} ; }} ; echo {FLUSH_MARKER}:$?"
+        ),
+        None => format!("{{ {mv_cmd} ; }} ; echo {MV_MARKER}:$?"),
+    }
+}
+
+// `mv -f`/`{ ; }`/`$?` are POSIX-shell-only: PowerShell's `mv` (an alias for
+// `Move-Item`) doesn't have a `-f` flag (`-Force` is ambiguous with
+// `-Filter` under partial-name binding), bare `{ ... }` is an unexecuted
+// script block rather than a grouped command, and `$?` is a boolean. So the
+// move is done with `Move-Item -Force` in a try/catch that echoes a numeric
+// marker explicitly, mirroring the POSIX builder's contract instead of
+// reusing its syntax. `-ErrorAction Stop` is required for the catch to
+// actually fire: cmdlets raise non-terminating errors by default, which
+// `try`/`catch` silently ignores unless the cmdlet (or
+// `$ErrorActionPreference`) is told to escalate them.
+#[cfg(windows)]
+fn build_move_and_flush_script(tmp_path: &Path, hosts_path: &Path, flush_cmd: Option<&str>) -> String {
+    let mv_cmd = format!(
+        "try {{ Move-Item -Force -ErrorAction Stop -LiteralPath {} -Destination {} ; Write-Output '{MV_MARKER}:0' }} catch {{ Write-Output '{MV_MARKER}:1' }}",
+        ps_quote(&tmp_path.to_string_lossy()),
+        ps_quote(&hosts_path.to_string_lossy()),
+    );
+    match flush_cmd {
+        Some(flush) => format!(
+            "{mv_cmd} ; try {{ {flush} ; if ($LASTEXITCODE -ne 0) {{ throw 'flush failed' }} ; Write-Output '{FLUSH_MARKER}:0' }} catch {{ Write-Output '{FLUSH_MARKER}:1' }}"
+        ),
+        None => mv_cmd,
+    }
 }
 
 fn extract_marker_exit(stdout: &str, marker: &str) -> Option<i32> {
@@ -295,9 +391,9 @@ pub fn install_helper_and_write(
     _hosts_path: &Path,
     _flush_cmd: Option<&str>,
 ) -> Result<WriteOutcome, String> {
-    // TODO: verify on this OS. The background-helper install path is
-    // currently macOS-only (LaunchDaemon + getpeereid); other platforms
-    // still use the per-write elevation prompt in write_hosts_file.
+    // The background-helper install path is deliberately macOS-only
+    // (LaunchDaemon + getpeereid); other platforms always use the per-write
+    // elevation prompt in write_hosts_file instead.
     Err("The background helper is not yet supported on this OS.".to_string())
 }
 
@@ -327,6 +423,7 @@ pub fn build_uninstall_command() -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn shell_quote_escapes_single_quotes() {
         assert_eq!(shell_quote("/etc/hosts"), "'/etc/hosts'");
@@ -339,5 +436,39 @@ mod tests {
         assert_eq!(extract_marker_exit(stdout, MV_MARKER), Some(0));
         assert_eq!(extract_marker_exit(stdout, FLUSH_MARKER), Some(1));
         assert_eq!(extract_marker_exit(stdout, "MISSING"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ps_quote_escapes_single_quotes() {
+        assert_eq!(ps_quote(r"C:\hosts"), r"'C:\hosts'");
+        assert_eq!(ps_quote("it's"), "'it''s'");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn build_move_and_flush_script_uses_powershell_syntax_and_numeric_markers() {
+        let script = build_move_and_flush_script(
+            Path::new(r"C:\staging\hosts"),
+            Path::new(r"C:\Windows\System32\drivers\etc\hosts"),
+            Some("ipconfig /flushdns"),
+        );
+        assert!(script.contains("Move-Item -Force -ErrorAction Stop"));
+        assert!(script.contains(&format!("{MV_MARKER}:0")));
+        assert!(script.contains(&format!("{MV_MARKER}:1")));
+        assert!(script.contains(&format!("{FLUSH_MARKER}:0")));
+        assert!(script.contains("$LASTEXITCODE"));
+        // Not POSIX syntax that PowerShell would misinterpret.
+        assert!(!script.contains("mv -f"));
+        assert!(!script.contains("$?"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn build_flush_only_script_wraps_native_exit_code() {
+        let script = build_flush_only_script("ipconfig /flushdns");
+        assert!(script.contains("$LASTEXITCODE"));
+        assert!(script.contains(&format!("{FLUSH_MARKER}:0")));
+        assert!(script.contains(&format!("{FLUSH_MARKER}:1")));
     }
 }
