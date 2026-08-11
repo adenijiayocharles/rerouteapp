@@ -77,8 +77,18 @@ fn build_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
         let placeholder = MenuItemBuilder::new("No enabled entries").enabled(false).build(app)?;
         menu.append(&placeholder)?;
     } else {
-        for entry in enabled_entries {
-            menu.append(&entry_submenu(app, entry)?)?;
+        for (group_name, members) in group_sections(&enabled_entries) {
+            match group_name {
+                // Grouped entries nest inside their own submenu, so the top
+                // level only ever shows the group name — the entries reveal
+                // themselves on click/hover, same as any other submenu.
+                Some(name) => menu.append(&group_submenu(app, name, &members)?)?,
+                None => {
+                    for entry in members {
+                        menu.append(&entry_submenu(app, entry)?)?;
+                    }
+                }
+            }
         }
     }
 
@@ -89,6 +99,39 @@ fn build_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
     menu.append(&PredefinedMenuItem::quit(app, Some("Quit"))?)?;
 
     Ok(menu)
+}
+
+/// Buckets enabled entries into per-group sections — sorted alphabetically
+/// by group name, each preserving the entries' relative `order_index` order
+/// — followed by one final `None` section for ungrouped entries, so the
+/// tray always lists groups before anything ungrouped (mirrors the
+/// alphabetical group ordering the sidebar's group filter list already uses
+/// in `App.tsx`).
+fn group_sections<'a>(entries: &[&'a Entry]) -> Vec<(Option<&'a str>, Vec<&'a Entry>)> {
+    let mut group_names: Vec<&str> = entries.iter().map(|e| e.group.as_str()).filter(|g| !g.is_empty()).collect();
+    group_names.sort_unstable();
+    group_names.dedup();
+
+    let mut sections: Vec<(Option<&str>, Vec<&Entry>)> = group_names
+        .into_iter()
+        .map(|name| {
+            let members = entries.iter().copied().filter(|e| e.group == name).collect();
+            (Some(name), members)
+        })
+        .collect();
+
+    let ungrouped: Vec<&Entry> = entries.iter().copied().filter(|e| e.group.is_empty()).collect();
+    if !ungrouped.is_empty() {
+        sections.push((None, ungrouped));
+    }
+
+    sections
+}
+
+fn group_submenu(app: &AppHandle, name: &str, entries: &[&Entry]) -> tauri::Result<Submenu<Wry>> {
+    let items: Vec<Submenu<Wry>> = entries.iter().map(|entry| entry_submenu(app, entry)).collect::<tauri::Result<_>>()?;
+    let refs: Vec<&dyn IsMenuItem<Wry>> = items.iter().map(|i| i as &dyn IsMenuItem<Wry>).collect();
+    Submenu::with_items(app, name, true, &refs)
 }
 
 fn entry_submenu(app: &AppHandle, entry: &Entry) -> tauri::Result<Submenu<Wry>> {
@@ -167,5 +210,79 @@ fn notify_switch(app: &AppHandle, result: &commands::WriteResult) {
     match app.notification().builder().title("re:route").body(body).show() {
         Ok(()) => eprintln!("tray: notification shown (permission state: {:?})", app.notification().permission_state()),
         Err(e) => eprintln!("tray: failed to show notification: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: &str, group: &str) -> Entry {
+        Entry {
+            id: id.to_string(),
+            hostname: format!("{id}.test"),
+            comment: String::new(),
+            group: group.to_string(),
+            enabled: true,
+            active_ip_id: String::new(),
+            ips: Vec::new(),
+            last_modified: String::new(),
+        }
+    }
+
+    #[test]
+    fn groups_sort_alphabetically_before_ungrouped() {
+        let entries = [
+            entry("z-grouped", "zebra"),
+            entry("ungrouped-1", ""),
+            entry("a-grouped", "alpha"),
+            entry("ungrouped-2", ""),
+        ];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let sections = group_sections(&refs);
+
+        let section_ids: Vec<(Option<&str>, Vec<&str>)> = sections
+            .iter()
+            .map(|(name, members)| (*name, members.iter().map(|e| e.id.as_str()).collect()))
+            .collect();
+        assert_eq!(
+            section_ids,
+            vec![
+                (Some("alpha"), vec!["a-grouped"]),
+                (Some("zebra"), vec!["z-grouped"]),
+                (None, vec!["ungrouped-1", "ungrouped-2"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_relative_order_within_a_group() {
+        let entries = [entry("second", "g"), entry("first", "g")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let sections = group_sections(&refs);
+
+        assert_eq!(sections.len(), 1);
+        let (name, members) = &sections[0];
+        assert_eq!(*name, Some("g"));
+        assert_eq!(members.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["second", "first"]);
+    }
+
+    #[test]
+    fn all_ungrouped_yields_single_section() {
+        let entries = [entry("a", ""), entry("b", "")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let sections = group_sections(&refs);
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].0, None);
+    }
+
+    #[test]
+    fn no_entries_yields_no_sections() {
+        let sections = group_sections(&[]);
+        assert!(sections.is_empty());
     }
 }
