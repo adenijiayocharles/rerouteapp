@@ -1,6 +1,10 @@
 [package]
 name = "helper-protocol"
 version = "0.1.0"
+description = "Wire protocol shared between re:route and its privileged helper daemon"
+authors = ["Adeniji Charles Ayodipupo"]
+license = "MIT"
+repository = "https://github.com/adenijiayocharles/rerouteapp"
 edition = "2021"
 
 [dependencies]

@@ -1,6 +1,10 @@
 [package]
 name = "helper"
 version = "0.1.0"
+description = "Privileged helper daemon for re:route, providing passwordless writes to the hosts file after the first elevation prompt"
+authors = ["Adeniji Charles Ayodipupo"]
+license = "MIT"
+repository = "https://github.com/adenijiayocharles/rerouteapp"
 edition = "2021"
 
 [[bin]]

@@ -1,0 +1,72 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- MIT `LICENSE`, license metadata in `package.json`/`Cargo.toml`, and this changelog.
+
+## [0.2.1] - 2026-08-11
+
+### Fixed
+
+- Inline styles are now allowed by the app's CSP so CodeMirror (the raw hosts-file editor) renders correctly.
+
+## [0.2.0] - 2026-08-11
+
+### Added
+
+- Automatic update checking and installation.
+- Tray-triggered IP switches now surface a notification.
+- Editable group names from the sidebar.
+- Adopted hosts entries are split on commas/spaces and grouped by IP during onboarding.
+
+### Changed
+
+- Rebranded display text from "Reroute" to "re:route".
+- Replaced the per-row Edit button with a combined Edit/Delete overflow menu.
+- The auto-flush-DNS setting is now respected on entry save.
+- Widened the Settings modal and dropped redundant toggle-row descriptions.
+- Group IP additions/relabels now propagate correctly, and the unmanaged-entries list remembers its
+  collapsed/expanded state.
+
+### Fixed
+
+- Security and performance audit findings, plus helper-daemon write bugs.
+
+## [0.1.0] - 2026-08-10
+
+Initial release.
+
+### Added
+
+- Core hosts-file management: multi-IP-per-hostname entries with one-click active-IP switching, automatic DNS
+  cache flushing, diff-confirmed writes, and history with rollback.
+- Privileged helper daemon (macOS) for passwordless writes to `/etc/hosts` after the first elevation prompt.
+- Raw-editor mode: CodeMirror-based editor with a custom hosts-file syntax highlighter, live linting, and a
+  line-level diff/diagnostics view.
+- Entry deletion flow, wired through the same preview/diff/confirm pattern as other writes.
+- First-run onboarding to adopt pre-existing, unmanaged hosts entries into the app.
+- Settings: background helper toggle, launch-at-login, auto-flush DNS, "always preview before saving", history
+  retention, and light/dark/system theme.
+- macOS menu bar (tray) icon for quick IP switching without opening the main window.
+- App rebrand from "Hosts Manager" to "Reroute", with a new app/dock/menu-bar icon.
+- Signed release pipeline: `reroute-helper` is codesigned with the same Developer ID as the app bundle before
+  packaging.
+
+### Fixed
+
+- History and "last modified" timestamps rendering in UTC instead of local time.
+- Custom titlebar: close/minimize/maximize/drag were silently broken.
+- False "external change" banner appearing after in-app writes.
+- Various backend performance, concurrency, and data-safety issues found in review.
+
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/adenijiayocharles/rerouteapp/releases/tag/v0.1.0

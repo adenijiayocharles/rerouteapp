@@ -2,6 +2,13 @@
   "name": "reroute",
   "private": true,
   "version": "0.2.1",
+  "description": "re:route - manage system hosts file entries via a GUI",
+  "license": "MIT",
+  "author": "Adeniji Charles Ayodipupo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adenijiayocharles/rerouteapp.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
