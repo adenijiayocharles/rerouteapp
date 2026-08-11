@@ -2,14 +2,16 @@
 //! (the main Hosts list): add/edit, switch active IP, enable/disable,
 //! restore from history, and delete.
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use super::{
     auto_flush_dns_enabled, backup_and_write, contains_control_chars, draft_to_entry, flush_message_for,
     group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, WriteResult,
 };
+use crate::conflicts::{self, Conflict};
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry};
+use crate::ping;
 use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 use crate::validate;
@@ -18,6 +20,17 @@ use crate::validate;
 pub fn list_entries(state: State<AppState>) -> Result<Vec<Entry>, String> {
     let conn = state.read_conn.lock_recover();
     store::list_entries(&conn).map_err(|e| e.to_string())
+}
+
+/// Hostnames claimed by more than one enabled entry with different active
+/// IPs, for the list view's per-row warning badge. The frontend re-fetches
+/// this alongside `list_entries` so it never depends on a modal being
+/// open — see `conflicts::find_conflicts` for the detection rules.
+#[tauri::command]
+pub fn list_conflicts(state: State<AppState>) -> Result<Vec<Conflict>, String> {
+    let conn = state.read_conn.lock_recover();
+    let entries = store::list_entries(&conn).map_err(|e| e.to_string())?;
+    Ok(conflicts::find_conflicts(&entries))
 }
 
 #[tauri::command]
@@ -83,6 +96,14 @@ pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<Dif
     };
     let (_, _, group_propagation) = group_propagation_plans(&conn, before.as_ref(), &after)?;
 
+    // Simulates the entries list as it would look right after this save
+    // (existing entry replaced, or the new one appended) so the warning
+    // reflects what saving would actually produce, not the pre-save state.
+    let mut simulated = store::list_entries(&conn).map_err(|e| e.to_string())?;
+    simulated.retain(|e| e.id != after.id);
+    simulated.push(after.clone());
+    let conflict_warning = conflicts::warning_for_entry(&conflicts::find_conflicts(&simulated), &after.id);
+
     Ok(DiffPreview {
         mode: "save".to_string(),
         is_new,
@@ -98,6 +119,7 @@ pub fn preview_save(state: State<AppState>, mut draft: EntryDraft) -> Result<Dif
         diff_lines: None,
         diagnostics: None,
         group_propagation: if group_propagation.is_empty() { None } else { Some(group_propagation) },
+        conflict_warning,
     })
 }
 
@@ -166,10 +188,12 @@ pub fn confirm_save(app: AppHandle, state: State<AppState>, mut draft: EntryDraf
         .map(|ip| ip.ip.as_str())
         .unwrap_or("");
     let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, active_ip);
+    let conflict_warning = conflicts::warning_for_entry(&conflicts::find_conflicts(&entries), &after_entry.id);
     Ok(WriteResult {
         entry: Some(after_entry),
         flush_ok: outcome.flush_ok,
         flush_message,
+        conflict_warning,
     })
 }
 
@@ -216,11 +240,28 @@ pub fn switch_active_ip(
     tx.commit().map_err(|e| e.to_string())?;
     crate::tray::sync(&app, &entries);
 
+    // Doesn't block the response: the switch itself already succeeded and
+    // was written, so a slow/unreachable ping shouldn't hold up the UI.
+    // The frontend picks the result up via `ping::IP_HEALTH_CHECKED_EVENT`
+    // and shows a non-blocking warning if it comes back unreachable.
+    {
+        let app = app.clone();
+        let entry_id = entry_id.clone();
+        let ip_id = ip_id.clone();
+        let ip = target_ip.ip.clone();
+        std::thread::spawn(move || {
+            let reachable = ping::is_reachable(&ip);
+            let _ = app.emit(ping::IP_HEALTH_CHECKED_EVENT, ping::IpHealthResult { entry_id, ip_id, reachable });
+        });
+    }
+
     let flush_message = flush_message_for(do_flush, &outcome, &after_entry.hostname, &target_ip.ip);
+    let conflict_warning = conflicts::warning_for_entry(&conflicts::find_conflicts(&entries), &after_entry.id);
     Ok(WriteResult {
         entry: Some(after_entry),
         flush_ok: outcome.flush_ok,
         flush_message,
+        conflict_warning,
     })
 }
 
@@ -254,10 +295,12 @@ pub fn toggle_enabled(app: AppHandle, state: State<AppState>, entry_id: String) 
     tx.commit().map_err(|e| e.to_string())?;
     crate::tray::sync(&app, &entries);
 
+    let conflict_warning = conflicts::warning_for_entry(&conflicts::find_conflicts(&entries), &after_entry.id);
     Ok(WriteResult {
         entry: Some(after_entry),
         flush_ok: None,
         flush_message: None,
+        conflict_warning,
     })
 }
 
@@ -283,6 +326,7 @@ pub fn history_diff(state: State<AppState>, history_id: String) -> Result<DiffPr
         diff_lines: None,
         diagnostics: None,
         group_propagation: None,
+        conflict_warning: None,
     })
 }
 
@@ -322,6 +366,7 @@ pub fn preview_restore(state: State<AppState>, history_id: String) -> Result<Dif
         diff_lines: None,
         diagnostics: None,
         group_propagation: None,
+        conflict_warning: None,
     })
 }
 
@@ -377,6 +422,7 @@ pub fn confirm_restore(app: AppHandle, state: State<AppState>, history_id: Strin
         entry: after_entry,
         flush_ok: None,
         flush_message: None,
+        conflict_warning: None,
     })
 }
 
@@ -405,6 +451,7 @@ pub fn preview_delete(state: State<AppState>, entry_id: String) -> Result<DiffPr
         diff_lines: None,
         diagnostics: None,
         group_propagation: None,
+        conflict_warning: None,
     })
 }
 
@@ -443,5 +490,6 @@ pub fn confirm_delete(app: AppHandle, state: State<AppState>, entry_id: String) 
         entry: None,
         flush_ok: None,
         flush_message: None,
+        conflict_warning: None,
     })
 }

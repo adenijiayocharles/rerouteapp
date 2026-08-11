@@ -4,7 +4,18 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import "./App.css";
 import { api } from "./api";
 import { colorsFor, type Theme, type ThemePreference } from "./theme";
-import type { DiffPreview, Entry, EntryDraft, HistoryEntry, HistoryRetention, IpCandidate, ToastState, UnmanagedEntry } from "./types";
+import type {
+  Conflict,
+  DiffPreview,
+  Entry,
+  EntryDraft,
+  HistoryEntry,
+  HistoryRetention,
+  IpCandidate,
+  IpHealthResult,
+  ToastState,
+  UnmanagedEntry,
+} from "./types";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ListView } from "./components/ListView";
@@ -15,10 +26,12 @@ import { DiffModal } from "./components/DiffModal";
 import { Toast } from "./components/Toast";
 import { ReloadBanner } from "./components/ReloadBanner";
 import { SettingsModal } from "./components/SettingsModal";
+import { DoctorModal } from "./components/DoctorModal";
 import { OnboardingModal } from "./components/OnboardingModal";
 
 const HOSTS_CHANGED_EVENT = "hosts-file-changed-externally";
 const ENTRIES_CHANGED_EVENT = "entries-changed";
+const IP_HEALTH_CHECKED_EVENT = "ip-health-checked";
 const MENU_ACTION_EVENT = "menu-action";
 const THEME_STORAGE_KEY = "reroute-theme";
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -41,6 +54,8 @@ interface State {
   search: string;
   groupFilter: string | null;
   entries: Entry[];
+  conflicts: Conflict[];
+  unreachableIps: Record<string, string>;
   unmanagedEntries: UnmanagedEntry[];
   showOnboarding: boolean;
   onboardingEntries: UnmanagedEntry[];
@@ -61,6 +76,7 @@ interface State {
   helperActive: boolean;
   helperEnabled: boolean;
   settingsOpen: boolean;
+  doctorOpen: boolean;
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
@@ -76,6 +92,9 @@ interface State {
 
 type Action =
   | { type: "SET_ENTRIES"; entries: Entry[] }
+  | { type: "SET_CONFLICTS"; conflicts: Conflict[] }
+  | { type: "SET_IP_UNREACHABLE"; entryId: string; ipId: string }
+  | { type: "CLEAR_IP_UNREACHABLE"; entryId: string }
   | { type: "SET_UNMANAGED_ENTRIES"; entries: UnmanagedEntry[] }
   | { type: "SHOW_ONBOARDING"; entries: UnmanagedEntry[] }
   | { type: "HIDE_ONBOARDING" }
@@ -95,6 +114,8 @@ type Action =
   | { type: "SET_UPDATE_STATUS"; status: UpdateStatus; version?: string | null; progress?: number | null }
   | { type: "OPEN_SETTINGS" }
   | { type: "CLOSE_SETTINGS" }
+  | { type: "OPEN_DOCTOR" }
+  | { type: "CLOSE_DOCTOR" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
   | { type: "GO_RAW" }
@@ -140,6 +161,8 @@ const initialState: State = {
   search: "",
   groupFilter: null,
   entries: [],
+  conflicts: [],
+  unreachableIps: {},
   unmanagedEntries: [],
   showOnboarding: false,
   onboardingEntries: [],
@@ -160,6 +183,7 @@ const initialState: State = {
   helperActive: false,
   helperEnabled: true,
   settingsOpen: false,
+  doctorOpen: false,
   launchAtLogin: false,
   autoFlushDns: true,
   confirmBeforeSave: false,
@@ -208,6 +232,16 @@ function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "SET_ENTRIES":
       return { ...state, entries: mergeEntries(state.entries, action.entries) };
+    case "SET_CONFLICTS":
+      return { ...state, conflicts: action.conflicts };
+    case "SET_IP_UNREACHABLE":
+      return { ...state, unreachableIps: { ...state.unreachableIps, [action.entryId]: action.ipId } };
+    case "CLEAR_IP_UNREACHABLE": {
+      if (!(action.entryId in state.unreachableIps)) return state;
+      const unreachableIps = { ...state.unreachableIps };
+      delete unreachableIps[action.entryId];
+      return { ...state, unreachableIps };
+    }
     case "SET_UNMANAGED_ENTRIES":
       return { ...state, unmanagedEntries: action.entries };
     case "SHOW_ONBOARDING":
@@ -247,6 +281,10 @@ function reducer(state: State, action: Action): State {
       return { ...state, settingsOpen: true };
     case "CLOSE_SETTINGS":
       return { ...state, settingsOpen: false };
+    case "OPEN_DOCTOR":
+      return { ...state, doctorOpen: true };
+    case "CLOSE_DOCTOR":
+      return { ...state, doctorOpen: false };
     case "SET_THEME_PREFERENCE":
       return { ...state, themePreference: action.preference };
     case "SET_SYSTEM_PREFERS_DARK":
@@ -401,13 +439,23 @@ export default function App() {
   useEffect(() => {
     updateStatusRef.current = state.updateStatus;
   }, [state.updateStatus]);
+  const entriesRef = useRef<Entry[]>(state.entries);
+  useEffect(() => {
+    entriesRef.current = state.entries;
+  }, [state.entries]);
   const theme: Theme =
     state.themePreference === "system" ? (state.systemPrefersDark ? "dark" : "light") : state.themePreference;
   const c = colorsFor(theme);
 
   async function refreshEntries() {
-    const entries = await api.listEntries();
+    const [entries, conflicts] = await Promise.all([api.listEntries(), api.listConflicts()]);
     dispatch({ type: "SET_ENTRIES", entries });
+    dispatch({ type: "SET_CONFLICTS", conflicts });
+  }
+
+  async function refreshConflicts() {
+    const conflicts = await api.listConflicts();
+    dispatch({ type: "SET_CONFLICTS", conflicts });
   }
 
   async function refreshUnmanagedEntries() {
@@ -688,6 +736,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Fired by the backend a moment after a successful IP switch, once its
+    // background ping resolves (see `switch_active_ip`/`ping.rs`) — never
+    // blocks the switch itself, just warns after the fact if the newly
+    // active IP didn't respond.
+    let unlisten: (() => void) | undefined;
+    listen<IpHealthResult>(IP_HEALTH_CHECKED_EVENT, (event) => {
+      const { entryId, ipId, reachable } = event.payload;
+      if (reachable) return;
+      dispatch({ type: "SET_IP_UNREACHABLE", entryId, ipId });
+      const entry = entriesRef.current.find((e) => e.id === entryId);
+      if (!entry || entry.activeIpId !== ipId) return; // switched again before this landed
+      const ip = entry.ips.find((i) => i.id === ipId);
+      dispatch({
+        type: "SET_TOAST",
+        toast: {
+          type: "warning",
+          title: "IP unreachable",
+          message: `${entry.hostname} now points to ${ip?.ip ?? ipId}, but it didn't respond to a ping.`,
+        },
+      });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
     // The native File menu mirrors a handful of in-app actions so they're
     // reachable without the window already being focused on the right view.
     let unlisten: (() => void) | undefined;
@@ -745,6 +820,20 @@ export default function App() {
     );
   }, [state.unmanagedEntries, state.search]);
 
+  // Which hostname(s) each entry is in conflict over, keyed by entry id —
+  // built once per conflicts refresh rather than re-scanned per row.
+  const conflictsByEntry = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const conflict of state.conflicts) {
+      for (const member of conflict.members) {
+        const hostnames = map.get(member.entryId) ?? [];
+        hostnames.push(conflict.hostname);
+        map.set(member.entryId, hostnames);
+      }
+    }
+    return map;
+  }, [state.conflicts]);
+
   const groups = useMemo(() => {
     const names = Array.from(new Set(state.entries.filter((e) => e.group).map((e) => e.group))).sort();
     return names.map((name) => ({ name, count: state.entries.filter((e) => e.group === name).length }));
@@ -777,6 +866,11 @@ export default function App() {
       dispatch({
         type: "SET_TOAST",
         toast: { type: "error", title: "DNS flush failed", message: result.flushMessage ?? "The DNS cache could not be flushed.", retryFlush: true },
+      });
+    } else if (result.conflictWarning) {
+      dispatch({
+        type: "SET_TOAST",
+        toast: { type: "warning", title: isNew ? "Entry added" : "Entry saved", message: result.conflictWarning },
       });
     } else {
       dispatch({
@@ -963,14 +1057,21 @@ export default function App() {
     try {
       const result = await api.switchActiveIp(entryId, ipId);
       if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
+      dispatch({ type: "CLEAR_IP_UNREACHABLE", entryId });
       dispatch({ type: "SET_FLUSHING", id: null });
       await refreshHistory();
+      refreshConflicts().catch(() => {});
       refreshHelperStatus().catch(() => {});
       const ip = result.entry?.ips.find((i) => i.id === ipId);
       if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
         dispatch({
           type: "SET_TOAST",
           toast: { type: "error", title: "DNS flush failed", message: result.flushMessage ?? "The DNS cache could not be flushed.", retryFlush: true },
+        });
+      } else if (result.conflictWarning) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "warning", title: "IP switched", message: result.conflictWarning },
         });
       } else {
         dispatch({
@@ -989,8 +1090,18 @@ export default function App() {
       const result = await api.toggleEnabled(entryId);
       if (result.entry) dispatch({ type: "UPSERT_ENTRY", entry: result.entry });
       await refreshHistory();
+      refreshConflicts().catch(() => {});
       refreshHelperStatus().catch(() => {});
-      if (result.entry) {
+      if (result.entry && result.conflictWarning) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: {
+            type: "warning",
+            title: result.entry.enabled ? "Entry enabled" : "Entry disabled",
+            message: result.conflictWarning,
+          },
+        });
+      } else if (result.entry) {
         dispatch({
           type: "SET_TOAST",
           toast: {
@@ -1055,6 +1166,7 @@ export default function App() {
         version={state.appVersion}
         onFlushDns={handleFlushDns}
         onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })}
+        onOpenDoctor={() => dispatch({ type: "OPEN_DOCTOR" })}
       />
 
       {state.externalChangeDetected && (
@@ -1083,6 +1195,8 @@ export default function App() {
             c={c}
             entries={filteredEntries}
             totalEntryCount={state.entries.length}
+            conflictsByEntry={conflictsByEntry}
+            unreachableIps={state.unreachableIps}
             unmanagedEntries={state.groupFilter ? [] : filteredUnmanagedEntries}
             search={state.search}
             onSearchChange={handleSearchChange}
@@ -1169,6 +1283,10 @@ export default function App() {
           onSetAutoCheckUpdates={handleSetAutoCheckUpdates}
           onCheckForUpdatesNow={() => handleCheckForUpdates(true)}
         />
+      )}
+
+      {state.doctorOpen && (
+        <DoctorModal c={c} onClose={() => dispatch({ type: "CLOSE_DOCTOR" })} runDiagnostics={api.runDiagnostics} />
       )}
 
       {state.toast && (

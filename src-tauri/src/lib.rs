@@ -1,5 +1,6 @@
 mod app_menu;
 mod commands;
+mod conflicts;
 mod diff;
 mod dns_flush;
 mod elevate;
@@ -8,6 +9,7 @@ mod helper_install;
 mod hosts_parser;
 mod lint;
 mod models;
+mod ping;
 mod state;
 mod store;
 mod tray;
@@ -111,6 +113,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::entries::list_entries,
+            commands::entries::list_conflicts,
             commands::entries::get_history,
             commands::entries::is_shadow_domain,
             commands::entries::preview_save,
@@ -138,6 +141,7 @@ pub fn run() {
             commands::helper::set_helper_enabled,
             commands::settings::get_setting,
             commands::settings::set_setting,
+            commands::doctor::run_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,6 @@
 import type { ColorTokens } from "../theme";
 import type { ToastState } from "../types";
-import { CloseIcon, ErrorIcon, Spinner, SuccessIcon } from "./icons";
+import { CloseIcon, ErrorIcon, Spinner, SuccessIcon, WarningIcon } from "./icons";
 
 interface ToastProps {
   c: ColorTokens;
@@ -10,7 +10,7 @@ interface ToastProps {
 }
 
 export function Toast({ c, toast, onDismiss, onRetryFlush }: ToastProps) {
-  const iconBg = toast.type === "error" ? c.redSoft : c.greenSoft;
+  const iconBg = toast.type === "error" ? c.redSoft : toast.type === "warning" ? c.accentSoft : c.greenSoft;
 
   return (
     <div
@@ -46,6 +46,7 @@ export function Toast({ c, toast, onDismiss, onRetryFlush }: ToastProps) {
         {toast.type === "success" && <SuccessIcon color={c.green} />}
         {toast.type === "error" && <ErrorIcon color={c.red} />}
         {toast.type === "info" && <Spinner color={c.accent} />}
+        {toast.type === "warning" && <WarningIcon size={14} color={c.accent} />}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>{toast.title}</div>

@@ -5,6 +5,7 @@
 //! - `dns` — the standalone "Flush DNS now" action
 //! - `helper` — privileged helper daemon lifecycle
 //! - `settings` — generic settings-table accessors
+//! - `doctor` — read-only self-diagnostics ("doctor panel")
 //!
 //! This module itself only holds what's genuinely shared across more than
 //! one of those: the write pipeline (backup, elevation, the file watcher's
@@ -27,6 +28,7 @@ use crate::validate;
 
 pub mod adopt;
 pub mod dns;
+pub mod doctor;
 pub mod entries;
 pub mod helper;
 pub mod raw_save;
@@ -44,6 +46,8 @@ pub struct WriteResult {
     pub flush_ok: Option<bool>,
     #[serde(rename = "flushMessage")]
     pub flush_message: Option<String>,
+    #[serde(rename = "conflictWarning")]
+    pub conflict_warning: Option<String>,
 }
 
 /// Rewrites the draft's hostname field to its canonical form: individual

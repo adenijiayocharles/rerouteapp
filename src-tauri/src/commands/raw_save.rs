@@ -76,6 +76,7 @@ pub fn preview_raw_save(state: State<AppState>, content: String) -> Result<DiffP
         diff_lines: Some(diff_lines),
         diagnostics: Some(diagnostics),
         group_propagation: None,
+        conflict_warning: None,
     })
 }
 
@@ -235,7 +236,7 @@ pub fn confirm_raw_save(app: AppHandle, state: State<AppState>, content: String)
     tx.commit().map_err(|e| e.to_string())?;
     crate::tray::sync(&app, &entries);
 
-    Ok(WriteResult { entry: None, flush_ok: None, flush_message: None })
+    Ok(WriteResult { entry: None, flush_ok: None, flush_message: None, conflict_warning: None })
 }
 
 #[cfg(test)]

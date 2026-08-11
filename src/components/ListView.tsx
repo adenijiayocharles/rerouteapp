@@ -8,6 +8,8 @@ interface ListViewProps {
   c: ColorTokens;
   entries: Entry[];
   totalEntryCount: number;
+  conflictsByEntry: Map<string, string[]>;
+  unreachableIps: Record<string, string>;
   unmanagedEntries: UnmanagedEntry[];
   search: string;
   onSearchChange: (value: string) => void;
@@ -31,6 +33,8 @@ export function ListView({
   c,
   entries,
   totalEntryCount,
+  conflictsByEntry,
+  unreachableIps,
   unmanagedEntries,
   search,
   onSearchChange,
@@ -163,6 +167,8 @@ export function ListView({
               isDropdownOpen={openIpMenuId === entry.id}
               isFlushing={flushingId === entry.id}
               disabled={disabled}
+              conflictHostnames={conflictsByEntry.get(entry.id)}
+              unreachableIpId={unreachableIps[entry.id]}
               onToggleDropdown={onToggleDropdown}
               onToggleEnabled={onToggleEnabled}
               onEdit={onEdit}

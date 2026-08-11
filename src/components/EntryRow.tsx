@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
-import { CheckIcon, ChevronDownIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon, WarningIcon } from "./icons";
 
 interface EntryRowProps {
   c: ColorTokens;
@@ -9,6 +9,10 @@ interface EntryRowProps {
   isDropdownOpen: boolean;
   isFlushing: boolean;
   disabled: boolean;
+  /** Hostname(s) this entry shares, with a different IP, with another enabled entry. */
+  conflictHostnames?: string[];
+  /** Set when this entry's active IP just failed a post-switch reachability check. */
+  unreachableIpId?: string;
   onToggleDropdown: (entryId: string) => void;
   onToggleEnabled: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
@@ -32,6 +36,8 @@ export const EntryRow = memo(function EntryRow({
   isDropdownOpen,
   isFlushing,
   disabled,
+  conflictHostnames,
+  unreachableIpId,
   onToggleDropdown,
   onToggleEnabled,
   onEdit,
@@ -115,18 +121,29 @@ export const EntryRow = memo(function EntryRow({
       </div>
 
       <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 13,
-            fontWeight: 600,
-            color: c.text,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {entry.hostname}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono',monospace",
+              fontSize: 13,
+              fontWeight: 600,
+              color: c.text,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+            }}
+          >
+            {entry.hostname}
+          </div>
+          {conflictHostnames && conflictHostnames.length > 0 && (
+            <span
+              title={`Also claimed by another enabled entry with a different IP: ${conflictHostnames.join(", ")}`}
+              style={{ display: "flex", flex: "none" }}
+            >
+              <WarningIcon size={13} color={c.accent} />
+            </span>
+          )}
         </div>
         {entry.group && (
           <div style={{ fontSize: 10.5, fontWeight: 600, color: c.textFaint, marginTop: 2 }}>{entry.group}</div>
@@ -154,6 +171,10 @@ export const EntryRow = memo(function EntryRow({
         >
           {isFlushing ? (
             <Spinner size={8} color={c.accent} />
+          ) : unreachableIpId === activeIp?.id ? (
+            <span title="This IP didn't respond to a ping after the last switch." style={{ display: "flex", flex: "none" }}>
+              <WarningIcon size={11} color={c.accent} />
+            </span>
           ) : (
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.green, flex: "none" }} />
           )}

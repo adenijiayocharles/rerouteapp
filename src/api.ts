@@ -4,7 +4,9 @@ import { isEnabled as isAutostartEnabled, enable as enableAutostart, disable as 
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type {
+  Conflict,
   DiffPreview,
+  DoctorCheck,
   Entry,
   EntryDraft,
   HistoryEntry,
@@ -16,6 +18,7 @@ import type {
 
 export const api = {
   listEntries: () => invoke<Entry[]>("list_entries"),
+  listConflicts: () => invoke<Conflict[]>("list_conflicts"),
   getHistory: () => invoke<HistoryEntry[]>("get_history"),
   isShadowDomain: (hostname: string) => invoke<boolean>("is_shadow_domain", { hostname }),
 
@@ -87,4 +90,6 @@ export const api = {
   setAutoCheckUpdates: (enabled: boolean) =>
     invoke<void>("set_setting", { key: "auto_check_updates", value: enabled ? "true" : "false" }),
   relaunchApp: () => relaunch(),
+
+  runDiagnostics: () => invoke<DoctorCheck[]>("run_diagnostics"),
 };

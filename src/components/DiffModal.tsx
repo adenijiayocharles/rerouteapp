@@ -88,6 +88,24 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
           </div>
         )}
 
+        {diff.mode === "save" && diff.conflictWarning && (
+          <div style={{ padding: "12px 24px 0" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: c.accentSoft,
+                border: `1px solid ${c.accent}`,
+              }}
+            >
+              <WarningIcon size={16} color={c.accent} />
+              <div style={{ fontSize: 12.5, color: c.text, lineHeight: 1.5 }}>{diff.conflictWarning}</div>
+            </div>
+          </div>
+        )}
+
         {diff.mode === "save" && diff.groupPropagation && diff.groupPropagation.length > 0 && (
           <div style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 8 }}>
             {diff.groupPropagation.map((notice, idx) => {

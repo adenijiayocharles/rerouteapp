@@ -20,11 +20,13 @@ pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
                 entry: None,
                 flush_ok: Some(true),
                 flush_message: None,
+                conflict_warning: None,
             }),
             Err(e) => Ok(WriteResult {
                 entry: None,
                 flush_ok: Some(false),
                 flush_message: Some(format!("DNS flush failed: {e}")),
+                conflict_warning: None,
             }),
         };
     }
@@ -36,6 +38,7 @@ pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
             flush_message: Some(
                 "No supported DNS resolver cache was found on this system.".to_string(),
             ),
+            conflict_warning: None,
         });
     };
     let ok = elevate::run_flush_only(state.executor.as_ref(), &cmd)?;
@@ -47,5 +50,6 @@ pub fn flush_dns(state: State<AppState>) -> Result<WriteResult, String> {
         } else {
             Some("DNS flush failed. You can retry from here.".to_string())
         },
+        conflict_warning: None,
     })
 }

@@ -1,13 +1,14 @@
 import { useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ColorTokens } from "../theme";
-import { GearIcon } from "./icons";
+import { GearIcon, PulseIcon } from "./icons";
 
 interface TitleBarProps {
   c: ColorTokens;
   version: string | null;
   onFlushDns: () => void;
   onOpenSettings: () => void;
+  onOpenDoctor: () => void;
 }
 
 const appWindow = getCurrentWindow();
@@ -74,7 +75,7 @@ function TrafficLight({
   );
 }
 
-export function TitleBar({ c, version, onFlushDns, onOpenSettings }: TitleBarProps) {
+export function TitleBar({ c, version, onFlushDns, onOpenSettings, onOpenDoctor }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -111,6 +112,15 @@ export function TitleBar({ c, version, onFlushDns, onOpenSettings }: TitleBarPro
           <path d="M21 12a9 9 0 1 1-6.219-8.56" />
           <polyline points="21 3 21 9 15 9" />
         </svg>
+      </button>
+      <button
+        onClick={onOpenDoctor}
+        title="Doctor"
+        style={titleBarButtonStyle(c)}
+        onMouseEnter={(e) => (e.currentTarget.style.background = c.rowHover)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = c.trayBtnBg)}
+      >
+        <PulseIcon color={c.textMuted} />
       </button>
       <button
         onClick={onOpenSettings}

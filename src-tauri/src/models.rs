@@ -96,4 +96,6 @@ pub struct DiffPreview {
     pub diagnostics: Option<Vec<LintDiagnostic>>,
     #[serde(rename = "groupPropagation")]
     pub group_propagation: Option<Vec<GroupPropagationNotice>>,
+    #[serde(rename = "conflictWarning")]
+    pub conflict_warning: Option<String>,
 }

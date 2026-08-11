@@ -82,17 +82,45 @@ export interface DiffPreview {
   diffLines: DiffLine[] | null;
   diagnostics: LintDiagnostic[] | null;
   groupPropagation: GroupPropagationNotice[] | null;
+  conflictWarning: string | null;
 }
 
 export interface WriteResult {
   entry: Entry | null;
   flushOk: boolean | null;
   flushMessage: string | null;
+  conflictWarning: string | null;
+}
+
+export interface ConflictMember {
+  entryId: string;
+  hostname: string;
+  ip: string;
+}
+
+export interface Conflict {
+  hostname: string;
+  members: ConflictMember[];
+}
+
+export interface IpHealthResult {
+  entryId: string;
+  ipId: string;
+  reachable: boolean;
 }
 
 export type HistoryRetention = "50" | "100" | "200" | "unlimited";
 
-export type ToastType = "success" | "error" | "info";
+export type DoctorStatus = "ok" | "warn" | "fail";
+
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  status: DoctorStatus;
+  detail: string;
+}
+
+export type ToastType = "success" | "error" | "info" | "warning";
 
 export interface ToastState {
   type: ToastType;
