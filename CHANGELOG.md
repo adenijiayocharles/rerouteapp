@@ -7,9 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
 ### Added
 
 - MIT `LICENSE`, license metadata in `package.json`/`Cargo.toml`, and this changelog.
+- A native File menu (Add Entry, Flush DNS Now, Open Raw File).
+- The app version now shows in the header next to the title.
+
+### Changed
+
+- The menu bar tray lists grouped entries before ungrouped ones, with each group nested inside its own
+  collapsible submenu instead of a flat, always-expanded list.
+- The Hostname, Active IP, and Modified list columns are equal width and center-aligned (Hostname stays
+  left-aligned).
+- The About panel shows the app's own icon and "re:route" instead of a generic folder icon and the crate name.
+
+### Removed
+
+- The in-app Quick Switch tray and the Comment column from the entries list.
+- The Comment field from the edit-entry panel.
+
+### Fixed
+
+- The WKWebView's native right-click context menu (Reload, Inspect Element) no longer appears.
+- Scrolling past the content edges no longer bounces to reveal an unstyled white background.
 
 ## [0.2.1] - 2026-08-11
 
@@ -66,7 +88,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/adenijiayocharles/rerouteapp/releases/tag/v0.1.0
