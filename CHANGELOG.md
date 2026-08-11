@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-12
+
+### Added
+
+- A Doctor panel (pulse icon in the title bar) with read-only self-diagnostics: hosts file/managed-block
+  integrity, helper daemon reachability, DNS flush support, backups/local database writability, file watcher
+  status, and hostname conflicts.
+- Hostname conflict detection: warns when two enabled entries claim the same hostname with different IPs, via
+  the Doctor panel, list-row badges, and non-blocking warnings when saving, switching, or toggling an entry.
+- A background reachability check after switching an entry's active IP, warning (toast and a row indicator) if
+  the new address doesn't respond to a ping.
+- Broader DNS-cache-flush resolver detection on Linux (`dnsmasq`, alongside the existing `resolvectl`/`nscd`
+  detection), with the detected resolver named in the Doctor panel.
+
+### Changed
+
+- The macOS menu-bar app name is now lowercase ("reroute") to match the app's branding.
+
+### Fixed
+
+- The Windows elevated-write path, which previously always reported failure even on success because
+  `Start-Process -Verb RunAs` can't redirect output the way the code assumed.
+- The Linux elevated-write path's exit-code handling, audited against `pkexec`'s documented codes and
+  confirmed already correct (only a stale "untested" comment changed).
+
 ## [0.3.0] - 2026-08-11
 
 ### Added
@@ -88,7 +113,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.1.0...v0.2.0
