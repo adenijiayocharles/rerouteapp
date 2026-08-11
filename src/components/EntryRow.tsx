@@ -114,7 +114,7 @@ export const EntryRow = memo(function EntryRow({
         </button>
       </div>
 
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, textAlign: "center" }}>
         <div
           style={{
             fontFamily: "'JetBrains Mono',monospace",
@@ -141,6 +141,7 @@ export const EntryRow = memo(function EntryRow({
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: "center",
             gap: 7,
             padding: "6px 10px",
             borderRadius: 8,
@@ -234,7 +235,7 @@ export const EntryRow = memo(function EntryRow({
         )}
       </div>
 
-      <div style={{ fontSize: 11.5, color: c.textFaint }}>{entry.lastModified}</div>
+      <div style={{ fontSize: 11.5, color: c.textFaint, textAlign: "center" }}>{entry.lastModified}</div>
       <div style={{ position: "relative" }} ref={menuRef}>
         <button
           onClick={() => setMenuOpen((open) => !open)}

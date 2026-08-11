@@ -146,9 +146,9 @@ export function ListView({
           }}
         >
           <div />
-          <div>Hostname</div>
-          <div>Active IP</div>
-          <div>Modified</div>
+          <div style={{ textAlign: "center" }}>Hostname</div>
+          <div style={{ textAlign: "center" }}>Active IP</div>
+          <div style={{ textAlign: "center" }}>Modified</div>
           <div />
         </div>
       </div>
