@@ -5,6 +5,7 @@ import { GearIcon } from "./icons";
 
 interface TitleBarProps {
   c: ColorTokens;
+  version: string | null;
   onFlushDns: () => void;
   onOpenSettings: () => void;
 }
@@ -73,7 +74,7 @@ function TrafficLight({
   );
 }
 
-export function TitleBar({ c, onFlushDns, onOpenSettings }: TitleBarProps) {
+export function TitleBar({ c, version, onFlushDns, onOpenSettings }: TitleBarProps) {
   return (
     <div
       data-tauri-drag-region
@@ -94,7 +95,10 @@ export function TitleBar({ c, onFlushDns, onOpenSettings }: TitleBarProps) {
         <TrafficLight color="#febc2e" label="Minimize" glyph="minimize" onClick={() => appWindow.minimize()} />
         <TrafficLight color="#28c840" label="Maximize" glyph="maximize" onClick={() => appWindow.toggleMaximize()} />
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: c.text, letterSpacing: "-0.01em" }}>re:route</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: c.text, letterSpacing: "-0.01em" }}>re:route</div>
+        {version && <div style={{ fontSize: 11, fontWeight: 500, color: c.textFaint }}>v{version}</div>}
+      </div>
       <div style={{ flex: 1 }} />
       <button
         onClick={onFlushDns}

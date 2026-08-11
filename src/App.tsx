@@ -1026,7 +1026,12 @@ export default function App() {
         "--hm-scroll-thumb": c.scrollThumb,
       }}
     >
-      <TitleBar c={c} onFlushDns={handleFlushDns} onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })} />
+      <TitleBar
+        c={c}
+        version={state.appVersion}
+        onFlushDns={handleFlushDns}
+        onOpenSettings={() => dispatch({ type: "OPEN_SETTINGS" })}
+      />
 
       {state.externalChangeDetected && (
         <ReloadBanner c={c} onReload={handleReload} onDismiss={() => dispatch({ type: "DISMISS_EXTERNAL_CHANGE" })} />
