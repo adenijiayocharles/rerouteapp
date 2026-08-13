@@ -34,14 +34,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "resources": {
-      "../target/release/reroute-helper": "reroute-helper"
-    },
-    "macOS": {
-      "hardenedRuntime": true,
-      "minimumSystemVersion": "10.15"
-    }
+    ]
   },
   "plugins": {
     "updater": {

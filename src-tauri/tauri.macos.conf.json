@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "resources": {
+      "../target/release/reroute-helper": "reroute-helper"
+    },
+    "macOS": {
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}
