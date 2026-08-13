@@ -102,11 +102,14 @@ fn build_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
 }
 
 /// Buckets enabled entries into per-group sections — sorted alphabetically
-/// by group name, each preserving the entries' relative `order_index` order
-/// — followed by one final `None` section for ungrouped entries, so the
-/// tray always lists groups before anything ungrouped (mirrors the
-/// alphabetical group ordering the sidebar's group filter list already uses
-/// in `App.tsx`).
+/// by group name, each with its members sorted alphabetically by hostname
+/// — followed by one final `None` section for ungrouped entries (also
+/// hostname-sorted), so the tray always lists groups before anything
+/// ungrouped (mirrors the alphabetical group ordering the sidebar's group
+/// filter list already uses in `App.tsx`). This intentionally diverges from
+/// the sidebar's own entry list, which preserves user drag order
+/// (`order_index`) instead — the tray is a quick-scan dropdown rather than a
+/// reorderable list, so alphabetical beats mirroring drag order there.
 fn group_sections<'a>(entries: &[&'a Entry]) -> Vec<(Option<&'a str>, Vec<&'a Entry>)> {
     let mut group_names: Vec<&str> = entries.iter().map(|e| e.group.as_str()).filter(|g| !g.is_empty()).collect();
     group_names.sort_unstable();
@@ -115,12 +118,14 @@ fn group_sections<'a>(entries: &[&'a Entry]) -> Vec<(Option<&'a str>, Vec<&'a En
     let mut sections: Vec<(Option<&str>, Vec<&Entry>)> = group_names
         .into_iter()
         .map(|name| {
-            let members = entries.iter().copied().filter(|e| e.group == name).collect();
+            let mut members: Vec<&Entry> = entries.iter().copied().filter(|e| e.group == name).collect();
+            members.sort_by(|a, b| a.hostname.cmp(&b.hostname));
             (Some(name), members)
         })
         .collect();
 
-    let ungrouped: Vec<&Entry> = entries.iter().copied().filter(|e| e.group.is_empty()).collect();
+    let mut ungrouped: Vec<&Entry> = entries.iter().copied().filter(|e| e.group.is_empty()).collect();
+    ungrouped.sort_by(|a, b| a.hostname.cmp(&b.hostname));
     if !ungrouped.is_empty() {
         sections.push((None, ungrouped));
     }
@@ -135,8 +140,9 @@ fn group_submenu(app: &AppHandle, name: &str, entries: &[&Entry]) -> tauri::Resu
 }
 
 fn entry_submenu(app: &AppHandle, entry: &Entry) -> tauri::Result<Submenu<Wry>> {
-    let ip_items: Vec<CheckMenuItem<Wry>> = entry
-        .ips
+    let mut ips: Vec<_> = entry.ips.iter().collect();
+    ips.sort_by(|a, b| a.label.cmp(&b.label));
+    let ip_items: Vec<CheckMenuItem<Wry>> = ips
         .iter()
         .map(|ip| {
             CheckMenuItemBuilder::with_id(switch_id(&entry.id, &ip.id), &ip.label)
@@ -257,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_relative_order_within_a_group() {
+    fn sorts_entries_alphabetically_within_a_group() {
         let entries = [entry("second", "g"), entry("first", "g")];
         let refs: Vec<&Entry> = entries.iter().collect();
 
@@ -266,7 +272,20 @@ mod tests {
         assert_eq!(sections.len(), 1);
         let (name, members) = &sections[0];
         assert_eq!(*name, Some("g"));
-        assert_eq!(members.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["second", "first"]);
+        assert_eq!(members.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["first", "second"]);
+    }
+
+    #[test]
+    fn sorts_ungrouped_entries_alphabetically() {
+        let entries = [entry("second", ""), entry("first", "")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let sections = group_sections(&refs);
+
+        assert_eq!(sections.len(), 1);
+        let (name, members) = &sections[0];
+        assert_eq!(*name, None);
+        assert_eq!(members.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["first", "second"]);
     }
 
     #[test]
