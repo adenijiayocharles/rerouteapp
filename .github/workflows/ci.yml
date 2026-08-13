@@ -50,8 +50,25 @@ jobs:
       - name: install frontend dependencies
         run: npm ci
 
+      - name: build helper daemon
+        # No-op on non-macOS (see scripts/build-helper.sh). reroute's build.rs
+        # validates its bundle.resources path even for plain `cargo` builds,
+        # so this has to run before any cargo command below, matching what
+        # beforeBuildCommand does for `tauri build`.
+        run: bash scripts/build-helper.sh
+
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets
+        # helper is a Unix-only privileged daemon (unix sockets, getpeereid)
+        # that isn't meant to build on Windows at all, and isn't part of any
+        # shipped Linux feature yet either — exclude it outside macOS so
+        # `--workspace` doesn't try to compile it there.
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            cargo clippy --workspace --all-targets
+          else
+            cargo clippy --workspace --all-targets --exclude helper
+          fi
 
       - name: cargo test
         # helper's admin-group test needs to run as an actual admin user
