@@ -51,16 +51,13 @@ export const UnmanagedRow = memo(function UnmanagedRow({ c, entry, disabled, onA
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
+          textAlign: "center",
         }}
       >
         {entry.ip}
       </div>
 
-      <div style={{ fontSize: 12.5, color: c.textFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {entry.comment || "—"}
-      </div>
-
-      <div style={{ gridColumn: "span 2" }}>
+      <div style={{ gridColumn: "span 2", display: "flex", justifyContent: "center" }}>
         <button
           onClick={() => onAdopt(entry.id)}
           disabled={disabled}

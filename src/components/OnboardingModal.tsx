@@ -88,7 +88,7 @@ export function OnboardingModal({ c, entries, onAdopt, onSkip }: OnboardingModal
                 key={entry.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "24px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr)",
+                  gridTemplateColumns: "24px minmax(0,1.6fr) minmax(0,1fr)",
                   gap: 12,
                   alignItems: "center",
                   padding: "10px 12px",
@@ -121,9 +121,6 @@ export function OnboardingModal({ c, entries, onAdopt, onSkip }: OnboardingModal
                   }}
                 >
                   {entry.ip}
-                </span>
-                <span style={{ fontSize: 12, color: c.textFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {entry.comment || "—"}
                 </span>
               </label>
             ))}
