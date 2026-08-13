@@ -31,11 +31,15 @@ for those platforms are welcome.
 
 ## Installing
 
-Signed, notarized macOS builds are published on the [Releases](https://github.com/adenijiayocharles/rerouteapp/releases)
-page. Download the `.dmg` for your Mac's architecture (Apple Silicon or Intel) and drag re:route into
-Applications.
+Builds for all three platforms are published on the [Releases](https://github.com/adenijiayocharles/rerouteapp/releases)
+page:
 
-There are no prebuilt Windows or Linux binaries yet — build from source (below) on those platforms.
+- **macOS** — signed and notarized. Download the `.dmg` for your Mac's architecture (Apple Silicon or Intel)
+  and drag re:route into Applications.
+- **Windows** — unsigned (no code-signing certificate yet), so Windows SmartScreen will warn on first launch;
+  choose "More info" → "Run anyway". Download the `.msi` or the NSIS `.exe` installer.
+- **Linux** — unsigned, which is normal for Linux packages. Download the `.deb`, `.rpm`, or the AppImage for
+  your distro.
 
 ## Building from source
 
@@ -82,14 +86,17 @@ diff-confirmation modals, toasts, and settings.
 For the full design — the privilege model, the hosts-file parsing model, and the frontend's preview/confirm
 pattern — see [`CLAUDE.md`](CLAUDE.md) and [`src-tauri/src/commands/CLAUDE.md`](src-tauri/src/commands/CLAUDE.md).
 
-## Releasing (macOS, signed + notarized)
+## Releasing
 
-`.github/workflows/release-macos.yml` builds, signs, and notarizes the app for both `aarch64-apple-darwin` and
-`x86_64-apple-darwin` on a `v*` tag push, or via manual dispatch. It also builds and bundles `reroute-helper`,
-signed with the same Developer ID as the app, since it runs standalone (outside the app bundle) as root.
+`.github/workflows/release.yml` builds and publishes all four release targets on a `v*` tag push, or via manual
+dispatch: macOS `aarch64-apple-darwin` and `x86_64-apple-darwin` (signed + notarized), Windows (unsigned), and
+Linux (unsigned). The macOS legs also build and bundle `reroute-helper`, signed with the same Developer ID as
+the app, since it runs standalone (outside the app bundle) as root — Windows and Linux don't build the helper
+daemon at all (see [Platform support](#platform-support)).
 
-Required repo secrets (Settings → Secrets and variables → Actions), all from an
-[Apple Developer Program](https://developer.apple.com/programs/) membership:
+Required repo secrets (Settings → Secrets and variables → Actions). The `APPLE_*` secrets are only used by the
+macOS legs (from an [Apple Developer Program](https://developer.apple.com/programs/) membership); the
+`TAURI_SIGNING_*` secrets sign updater artifacts on all four legs:
 
 | Secret | Where to get it |
 | --- | --- |
@@ -99,6 +106,8 @@ Required repo secrets (Settings → Secrets and variables → Actions), all from
 | `APPLE_ID` | Your Apple ID email |
 | `APPLE_PASSWORD` | An [app-specific password](https://support.apple.com/en-us/102654) for that Apple ID (not your normal password) |
 | `APPLE_TEAM_ID` | Your 10-character Team ID, in [developer.apple.com/account](https://developer.apple.com/account) → Membership |
+| `TAURI_SIGNING_PRIVATE_KEY` | The updater's minisign private key (generate with `npx tauri signer generate`); its public half is `plugins.updater.pubkey` in `tauri.conf.json` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password set when generating that key |
 
 Notes specific to this app:
 

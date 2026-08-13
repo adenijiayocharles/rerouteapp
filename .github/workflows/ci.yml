@@ -80,7 +80,7 @@ jobs:
 
       - name: tauri build
         # Unsigned CI build — just proves the app compiles and bundles on
-        # this OS. Real signing/notarization stays in release-macos.yml.
+        # this OS. Real signing/notarization stays in release.yml.
         # createUpdaterArtifacts is disabled here since signing those needs
         # TAURI_SIGNING_PRIVATE_KEY, which only the release workflow has.
         shell: bash

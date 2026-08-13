@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Windows and Linux builds are now published on the Releases page alongside macOS, via the renamed
+  `release.yml` (formerly `release-macos.yml`). Both are unsigned for now.
+
 ## [0.5.0] - 2026-08-13
 
 ### Added
