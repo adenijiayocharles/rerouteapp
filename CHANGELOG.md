@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-13
+
+### Added
+
+- CI now builds, tests, and bundles the app on Ubuntu, Windows, and macOS on every push/PR, uploading each OS's
+  unsigned installer as a workflow artifact.
+
+### Changed
+
+- Tray menu entries are now sorted alphabetically by hostname within each group, instead of preserving the
+  sidebar's drag order.
+
+### Removed
+
+- The Comment column from the onboarding and unmanaged-entry rows.
+
+### Fixed
+
+- `tauri build` would have failed on Windows and Linux: `bundle.resources` unconditionally referenced the
+  macOS-only `reroute-helper` binary, which is now scoped to a macOS-only bundle config.
+
 ## [0.4.0] - 2026-08-12
 
 ### Added
@@ -113,7 +134,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.0...v0.2.1
