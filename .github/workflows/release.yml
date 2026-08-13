@@ -56,6 +56,33 @@ jobs:
       - name: install frontend dependencies
         run: npm ci
 
+      - name: extract release notes from CHANGELOG.md
+        # Pulls the section matching the current version (e.g. "## [0.5.1]")
+        # out of CHANGELOG.md so the GitHub release body is populated
+        # automatically instead of the tauri-action default placeholder.
+        # Falls back to that placeholder if the changelog wasn't updated for
+        # this version, so a missed edit doesn't fail the release build.
+        # `shell: bash` so this also runs under Git Bash's awk/node on the
+        # windows-latest runner, not PowerShell.
+        id: notes
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          NOTES="$(awk -v prefix="## [$VERSION]" '
+            index($0, prefix) == 1 { found=1; next }
+            found && index($0, "## [") == 1 { exit }
+            found && !started && $0 == "" { next }
+            found { started=1; print }
+          ' CHANGELOG.md)"
+          if [ -z "$NOTES" ]; then
+            NOTES="See the assets to download this version and install."
+          fi
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$NOTES"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,7 +103,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 're:route v__VERSION__'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
