@@ -81,7 +81,10 @@ jobs:
       - name: tauri build
         # Unsigned CI build — just proves the app compiles and bundles on
         # this OS. Real signing/notarization stays in release-macos.yml.
-        run: npm run tauri build
+        # createUpdaterArtifacts is disabled here since signing those needs
+        # TAURI_SIGNING_PRIVATE_KEY, which only the release workflow has.
+        shell: bash
+        run: npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: upload bundle
         uses: actions/upload-artifact@v4
