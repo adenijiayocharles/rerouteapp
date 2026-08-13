@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-14
+
+### Added
+
+- Sorting alphabetically to the Hostname column in the list view — clicking the header cycles
+  unsorted/ascending/descending.
+
+### Fixed
+
+- Elevated hosts-file writes could hang indefinitely waiting on an unanswered admin-password prompt, holding
+  the app's database lock the whole time; every elevated call is now bounded to a 180s timeout instead.
+- A write triggered from the menu bar tray (e.g. switching an entry's active IP) could freeze the entire app,
+  window included, while waiting on that same admin prompt — it now runs off the native main thread.
+- The save/confirm dialogs could be double-submitted with a fast double-click, and clicking Cancel while a
+  write was already in flight gave the false impression it had stopped — both now show a pending state and
+  disable their controls while a write is running.
+- The helper daemon's auth-token staging file was left world-readable and never deleted after use; it's now
+  written with restricted permissions and removed once the elevated install step finishes.
+- "Unlimited" history retention was genuinely unbounded, and the History view renders its full list with no
+  virtualization; retention is now capped at 5,000 rows even on "unlimited".
+- The Settings page's "Background helper" toggle was shown on Windows/Linux, where the helper daemon can never
+  actually run; the whole section is now hidden there instead.
+- Added `PRAGMA busy_timeout` to both SQLite connections, avoiding a rare "database is locked" error under
+  read/write contention.
+
+### Internal
+
+- Added an isolated, non-blocking `cargo audit`/`npm audit` CI job that can never slow down or block the real
+  build pipeline.
+
 ## [0.5.1] - 2026-08-13
 
 ### Added
@@ -161,7 +191,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...v0.4.0

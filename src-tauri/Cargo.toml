@@ -1,6 +1,6 @@
 [package]
 name = "reroute"
-version = "0.5.1"
+version = "0.5.2"
 description = "re:route - manage system hosts file entries via a GUI"
 authors = ["Adeniji Charles Ayodipupo"]
 license = "MIT"
