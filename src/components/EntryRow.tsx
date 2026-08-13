@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
 import { CheckIcon, ChevronDownIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon, WarningIcon } from "./icons";
@@ -47,6 +47,10 @@ export const EntryRow = memo(function EntryRow({
   const activeIp = entry.ips.find((i) => i.id === entry.activeIpId) ?? entry.ips[0];
   const ipMenuRef = useRef<HTMLDivElement>(null);
   const entryId = entry.id;
+  const sortedIps = useMemo(
+    () => [...entry.ips].sort((a, b) => a.ip.localeCompare(b.ip)),
+    [entry.ips],
+  );
 
   useEffect(() => {
     if (!isDropdownOpen) return;
@@ -209,7 +213,7 @@ export const EntryRow = memo(function EntryRow({
               animation: "hm-pop-in .13s ease",
             }}
           >
-            {entry.ips.map((ip) => {
+            {sortedIps.map((ip) => {
               const active = ip.id === entry.activeIpId;
               return (
                 <button
