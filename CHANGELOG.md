@@ -7,10 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-13
+
 ### Added
 
 - Windows and Linux builds are now published on the Releases page alongside macOS, via the renamed
   `release.yml` (formerly `release-macos.yml`). Both are unsigned for now.
+
+### Changed
+
+- IP address options in an entry's active-IP switch dropdown are now sorted alphabetically.
+
+### Fixed
+
+- The Apple signing secrets (certificate, password, identity, Apple ID) were set unconditionally on the shared
+  release build step, exposing them in the process environment of the Windows and Linux build legs even though
+  those legs never use them. Now scoped to the macOS legs only.
+- The Doctor panel's helper-daemon check told Windows/Linux users the helper would be reinstalled on their next
+  write; the helper daemon is macOS-only, so it now reports that plainly instead of promising something that
+  can never happen there.
+- Doctor's "Hostname conflicts" check (and the list-view conflict badges) displayed a hostname lowercased to
+  its internal dedup key instead of the casing the user actually typed.
+- The Doctor panel had no error handling — a failed diagnostics call left the spinner running forever — and no
+  way to re-run checks without closing and reopening the panel; both are now handled.
+- CI: `cargo clippy --workspace` unconditionally built the macOS-only `helper` crate, which doesn't compile on
+  Windows and hit a real type mismatch on Linux; excluded outside macOS. The unsigned CI sanity build also
+  tried to sign updater artifacts without the release signing key; disabled for that build only.
 
 ## [0.5.0] - 2026-08-13
 
@@ -139,7 +161,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.2.1...v0.3.0
