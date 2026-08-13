@@ -15,6 +15,17 @@ pub fn helper_status(state: State<AppState>) -> bool {
     helper_client::load_token(&state.app_data_dir).is_some_and(|token| helper_client::ping(&token))
 }
 
+/// Whether the privileged helper daemon is supported on this OS at all
+/// (macOS-only — see the crate's top-level privilege-model docs). Lets the
+/// Settings page hide the "Background helper" toggle entirely on
+/// Windows/Linux instead of offering a control that can never take effect
+/// there — mirrors the same `cfg!(target_os = "macos")` gate the Doctor
+/// panel's equivalent check already uses.
+#[tauri::command]
+pub fn helper_supported_on_this_platform() -> bool {
+    cfg!(target_os = "macos")
+}
+
 /// Removes the helper daemon (one elevated prompt): stops it via launchd
 /// and deletes its binary, LaunchDaemon plist, and auth token. Also drops
 /// the client's own token copy so a stale one can't linger. Subsequent

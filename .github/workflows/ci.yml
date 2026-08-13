@@ -93,3 +93,41 @@ jobs:
           path: ${{ matrix.artifact-glob }}
           if-no-files-found: warn
           retention-days: 7
+
+  audit:
+    name: dependency audit (informational)
+    runs-on: ubuntu-latest
+    # Vulnerability scanning only, kept as its own job (not part of the
+    # build matrix) so it can never slow down or block the real build/bundle
+    # pipeline above. `continue-on-error` at the job level means a finding
+    # here never fails CI or blocks a merge — check this job's own step logs
+    # for anything worth acting on.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit
+        run: cargo audit
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=high

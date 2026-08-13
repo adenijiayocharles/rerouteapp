@@ -64,7 +64,9 @@ interface State {
   openIpMenuId: string | null;
   flushingId: string | null;
   editingDraft: EntryDraft | null;
+  savingDraft: boolean;
   diff: DiffPreview | null;
+  confirmingDiff: boolean;
   pendingDraft: EntryDraft | null;
   pendingRestoreId: string | null;
   pendingDeleteId: string | null;
@@ -76,6 +78,7 @@ interface State {
   externalChangeDetected: boolean;
   helperActive: boolean;
   helperEnabled: boolean;
+  helperSupported: boolean;
   settingsOpen: boolean;
   doctorOpen: boolean;
   launchAtLogin: boolean;
@@ -104,6 +107,7 @@ type Action =
   | { type: "SET_SYSTEM_PREFERS_DARK"; prefersDark: boolean }
   | { type: "SET_HELPER_ACTIVE"; active: boolean }
   | { type: "SET_HELPER_ENABLED"; enabled: boolean }
+  | { type: "SET_HELPER_SUPPORTED"; supported: boolean }
   | { type: "SET_LAUNCH_AT_LOGIN"; enabled: boolean }
   | { type: "SET_AUTO_FLUSH_DNS"; enabled: boolean }
   | { type: "SET_CONFIRM_BEFORE_SAVE"; enabled: boolean }
@@ -141,6 +145,7 @@ type Action =
   | { type: "REMOVE_DRAFT_IP_ROW"; uid: string }
   | { type: "SET_DRAFT_ACTIVE"; uid: string }
   | { type: "TOGGLE_DRAFT_ENABLED" }
+  | { type: "SET_SAVING_DRAFT"; saving: boolean }
   | {
       type: "SHOW_DIFF";
       diff: DiffPreview;
@@ -150,6 +155,7 @@ type Action =
       pendingAdoptId: string | null;
       pendingRawSave: string | null;
     }
+  | { type: "SET_CONFIRMING_DIFF"; confirming: boolean }
   | { type: "CLOSE_DIFF" }
   | { type: "CLOSE_DIFF_AND_DRAFT" }
   | { type: "SET_TOAST"; toast: ToastState | null }
@@ -173,7 +179,9 @@ const initialState: State = {
   openIpMenuId: null,
   flushingId: null,
   editingDraft: null,
+  savingDraft: false,
   diff: null,
+  confirmingDiff: false,
   pendingDraft: null,
   pendingRestoreId: null,
   pendingDeleteId: null,
@@ -185,6 +193,7 @@ const initialState: State = {
   externalChangeDetected: false,
   helperActive: false,
   helperEnabled: true,
+  helperSupported: true,
   settingsOpen: false,
   doctorOpen: false,
   launchAtLogin: false,
@@ -257,6 +266,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, helperActive: action.active };
     case "SET_HELPER_ENABLED":
       return { ...state, helperEnabled: action.enabled };
+    case "SET_HELPER_SUPPORTED":
+      return { ...state, helperSupported: action.supported };
     case "SET_LAUNCH_AT_LOGIN":
       return { ...state, launchAtLogin: action.enabled };
     case "SET_AUTO_FLUSH_DNS":
@@ -360,7 +371,9 @@ function reducer(state: State, action: Action): State {
         },
       };
     case "CLOSE_DRAFT":
-      return { ...state, editingDraft: null };
+      return { ...state, editingDraft: null, savingDraft: false };
+    case "SET_SAVING_DRAFT":
+      return { ...state, savingDraft: action.saving };
     case "UPDATE_DRAFT_FIELD":
       if (!state.editingDraft) return state;
       return { ...state, editingDraft: { ...state.editingDraft, [action.field]: action.value } };
@@ -403,10 +416,13 @@ function reducer(state: State, action: Action): State {
         pendingAdoptId: action.pendingAdoptId,
         pendingRawSave: action.pendingRawSave,
       };
+    case "SET_CONFIRMING_DIFF":
+      return { ...state, confirmingDiff: action.confirming };
     case "CLOSE_DIFF":
       return {
         ...state,
         diff: null,
+        confirmingDiff: false,
         pendingDraft: null,
         pendingRestoreId: null,
         pendingDeleteId: null,
@@ -417,12 +433,14 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         diff: null,
+        confirmingDiff: false,
         pendingDraft: null,
         pendingRestoreId: null,
         pendingDeleteId: null,
         pendingAdoptId: null,
         pendingRawSave: null,
         editingDraft: null,
+        savingDraft: false,
       };
     case "SET_TOAST":
       return { ...state, toast: action.toast };
@@ -507,6 +525,10 @@ export default function App() {
     checkOnboarding();
     refreshHistory().catch(() => {});
     refreshHelperStatus().catch(() => {});
+    api
+      .helperSupportedOnThisPlatform()
+      .then((supported) => dispatch({ type: "SET_HELPER_SUPPORTED", supported }))
+      .catch(() => {});
     refreshRawFile().catch(() => {});
     api.getHelperEnabled().then((enabled) => dispatch({ type: "SET_HELPER_ENABLED", enabled })).catch(() => {});
     api.getLaunchAtLogin().then((enabled) => dispatch({ type: "SET_LAUNCH_AT_LOGIN", enabled })).catch(() => {});
@@ -896,33 +918,38 @@ export default function App() {
 
   async function handleRequestSave() {
     const draft = state.editingDraft;
-    if (!draft) return;
+    if (!draft || state.savingDraft) return;
 
-    // New entries save immediately with no review step, unless the
-    // hostname is a well-known system domain (then fall through to the
-    // usual preview/diff confirmation so that warning still gets shown)
-    // or the user has turned on "always confirm before saving".
-    if (draft.id === null && !state.confirmBeforeSave) {
-      try {
-        const isShadow = await api.isShadowDomain(draft.hostname);
-        if (isShadow) {
-          const diff = await api.previewSave(draft);
-          dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
-          return;
-        }
-        await performConfirmSave(draft, true);
-        dispatch({ type: "CLOSE_DRAFT" });
-      } catch (err) {
-        dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to save entry", message: errorMessage(err) } });
-      }
-      return;
-    }
-
+    dispatch({ type: "SET_SAVING_DRAFT", saving: true });
     try {
-      const diff = await api.previewSave(draft);
-      dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
-    } catch (err) {
-      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
+      // New entries save immediately with no review step, unless the
+      // hostname is a well-known system domain (then fall through to the
+      // usual preview/diff confirmation so that warning still gets shown)
+      // or the user has turned on "always confirm before saving".
+      if (draft.id === null && !state.confirmBeforeSave) {
+        try {
+          const isShadow = await api.isShadowDomain(draft.hostname);
+          if (isShadow) {
+            const diff = await api.previewSave(draft);
+            dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
+            return;
+          }
+          await performConfirmSave(draft, true);
+          dispatch({ type: "CLOSE_DRAFT" });
+        } catch (err) {
+          dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to save entry", message: errorMessage(err) } });
+        }
+        return;
+      }
+
+      try {
+        const diff = await api.previewSave(draft);
+        dispatch({ type: "SHOW_DIFF", diff, pendingDraft: draft, pendingRestoreId: null, pendingDeleteId: null, pendingAdoptId: null, pendingRawSave: null });
+      } catch (err) {
+        dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Couldn't preview changes", message: errorMessage(err) } });
+      }
+    } finally {
+      dispatch({ type: "SET_SAVING_DRAFT", saving: false });
     }
   }
 
@@ -1002,7 +1029,8 @@ export default function App() {
 
   async function handleConfirmDiff() {
     const { diff, pendingDraft, pendingRestoreId, pendingDeleteId, pendingAdoptId, pendingRawSave } = state;
-    if (!diff) return;
+    if (!diff || state.confirmingDiff) return;
+    dispatch({ type: "SET_CONFIRMING_DIFF", confirming: true });
     try {
       if (diff.mode === "save" && pendingDraft) {
         await performConfirmSave(pendingDraft, diff.isNew);
@@ -1058,6 +1086,8 @@ export default function App() {
       }
     } catch (err) {
       dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Write failed", message: errorMessage(err) } });
+    } finally {
+      dispatch({ type: "SET_CONFIRMING_DIFF", confirming: false });
     }
   }
 
@@ -1247,6 +1277,7 @@ export default function App() {
           c={c}
           theme={theme}
           draft={state.editingDraft}
+          saving={state.savingDraft}
           onClose={() => dispatch({ type: "CLOSE_DRAFT" })}
           onFieldChange={(field, value) => dispatch({ type: "UPDATE_DRAFT_FIELD", field, value })}
           onIpFieldChange={(uid, field, value) => dispatch({ type: "UPDATE_DRAFT_IP", uid, field, value })}
@@ -1266,6 +1297,7 @@ export default function App() {
           key={state.diff.title + state.diff.subtitle}
           c={c}
           diff={state.diff}
+          confirming={state.confirmingDiff}
           onCancel={() => dispatch({ type: "CLOSE_DIFF" })}
           onConfirm={handleConfirmDiff}
         />
@@ -1276,6 +1308,7 @@ export default function App() {
           c={c}
           helperEnabled={state.helperEnabled}
           helperActive={state.helperActive}
+          helperSupported={state.helperSupported}
           launchAtLogin={state.launchAtLogin}
           autoFlushDns={state.autoFlushDns}
           confirmBeforeSave={state.confirmBeforeSave}

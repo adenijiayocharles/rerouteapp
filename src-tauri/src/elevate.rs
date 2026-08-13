@@ -7,7 +7,10 @@
 //! `ElevatedExecutor` is the seam a signed helper would slot into later
 //! without touching any call site in `commands.rs`.
 
+use std::io::Read;
 use std::path::Path;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 pub trait ElevatedExecutor: Send + Sync {
     /// Runs a shell command with elevated privileges, returning combined
@@ -17,6 +20,56 @@ pub trait ElevatedExecutor: Send + Sync {
     /// macOS/Linux, PowerShell on Windows) — see the `build_*` helpers below,
     /// which are the only callers that should construct it.
     fn run_privileged_shell(&self, shell_cmd: &str) -> Result<String, String>;
+}
+
+/// How long an elevated command may run before the caller gives up waiting
+/// on it. This bounds how long a caller's thread — and, transitively,
+/// whatever lock it holds (see `commands.rs::write_content_to_hosts_file`,
+/// which holds `AppState::conn`'s mutex across this call) — can be pinned by
+/// a native admin-password dialog nobody answers. Generous enough that a
+/// real user typing their password never trips it; short enough that "the
+/// app looks frozen" resolves on its own within a few minutes instead of
+/// requiring a force-quit.
+const ELEVATION_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Runs `cmd` to completion, waiting up to `timeout`, and returns the same
+/// `Output` `Command::output()` would. If `cmd` hasn't exited within
+/// `timeout`, kills it and returns a `TimedOut`-kind error instead of
+/// blocking forever.
+///
+/// Every script this is used for (see the `build_*_script` functions below)
+/// only ever echoes a handful of short marker lines to stdout/stderr — never
+/// the hosts-file content itself, which is written to a file, not printed —
+/// so polling `try_wait()` before draining the child's pipes can never fill
+/// the OS pipe buffer and deadlock the child. A future caller piping
+/// substantial output through here would need a concurrent reader instead of
+/// this straightforward wait-then-read shape.
+fn run_with_timeout(mut cmd: Command, timeout: Duration) -> std::io::Result<Output> {
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "timed out waiting for a response to the administrator prompt",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    if let Some(mut s) = child.stdout.take() {
+        let _ = s.read_to_end(&mut stdout);
+    }
+    if let Some(mut s) = child.stderr.take() {
+        let _ = s.read_to_end(&mut stderr);
+    }
+    Ok(Output { status, stdout, stderr })
 }
 
 /// Single-quotes a path for safe interpolation into a POSIX shell command.
@@ -39,8 +92,6 @@ pub struct MacOsElevatedExecutor;
 #[cfg(target_os = "macos")]
 impl ElevatedExecutor for MacOsElevatedExecutor {
     fn run_privileged_shell(&self, shell_cmd: &str) -> Result<String, String> {
-        use std::process::Command;
-
         // Embed shell_cmd inside an AppleScript double-quoted string. This
         // process only ever calls osascript with an argv array (no shell
         // interpolation at this layer), so we only need to escape for the
@@ -51,11 +102,15 @@ impl ElevatedExecutor for MacOsElevatedExecutor {
             escaped, "the hosts file"
         );
 
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
-            .map_err(|e| format!("failed to launch osascript: {e}"))?;
+        let mut cmd = Command::new("osascript");
+        cmd.arg("-e").arg(&script);
+        let output = run_with_timeout(cmd, ELEVATION_TIMEOUT).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut {
+                "Administrator access timed out waiting for a response.".to_string()
+            } else {
+                format!("failed to launch osascript: {e}")
+            }
+        })?;
 
         if output.status.success() {
             // AppleScript's `do shell script` returns captured output as an
@@ -90,8 +145,19 @@ impl ElevatedExecutor for WindowsElevatedExecutor {
         // redirection requires it false. So instead, the elevated script
         // redirects its own output to a temp file, which we read back here
         // once `-Wait` returns control.
-        use std::process::Command;
-
+        //
+        // Timeout caveat: `Start-Process -Verb RunAs` launches the elevated
+        // process outside the normal parent/child tree (via the elevation
+        // broker), so killing *this* (unelevated) launcher on timeout stops
+        // our own wait but isn't guaranteed to dismiss the UAC prompt or the
+        // elevated process itself — unlike the macOS path, where killing
+        // osascript reliably tears down its `do shell script ... with
+        // administrator privileges` child. If the user answers a
+        // since-abandoned prompt after we've already given up and rolled
+        // back, `commands.rs::write_content_to_hosts_file` resetting
+        // `last_written` on any error here (see its own comment) ensures
+        // that late write is still correctly picked up as an external change
+        // rather than silently swallowed.
         let out_path = std::env::temp_dir().join(format!(
             "reroute-elevate-{}-{}.log",
             std::process::id(),
@@ -111,10 +177,15 @@ impl ElevatedExecutor for WindowsElevatedExecutor {
             ps_inner
         );
 
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps_command])
-            .output()
-            .map_err(|e| format!("failed to launch elevated PowerShell: {e}"))?;
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-Command", &ps_command]);
+        let output = run_with_timeout(cmd, ELEVATION_TIMEOUT).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut {
+                "Administrator access timed out waiting for a response.".to_string()
+            } else {
+                format!("failed to launch elevated PowerShell: {e}")
+            }
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -151,14 +222,22 @@ impl ElevatedExecutor for LinuxElevatedExecutor {
         // too many times) — both surfaced as a cancellation, since our
         // wrapped script always ends by echoing a marker and so otherwise
         // exits 0 regardless of the mv/flush outcome.
-        use std::process::Command;
-
-        let output = Command::new("pkexec")
-            .arg("sh")
-            .arg("-c")
-            .arg(shell_cmd)
-            .output()
-            .map_err(|e| format!("failed to launch pkexec: {e}"))?;
+        //
+        // Timeout caveat: killing `pkexec` on timeout terminates the process
+        // we spawned; most polkit agents propagate that to the child they
+        // launched, but this isn't a POSIX guarantee, so — as on Windows —
+        // an abandoned prompt could in principle still complete after we've
+        // given up. See `commands.rs::write_content_to_hosts_file`'s
+        // `last_written` reset for why a late write is still handled safely.
+        let mut cmd = Command::new("pkexec");
+        cmd.arg("sh").arg("-c").arg(shell_cmd);
+        let output = run_with_timeout(cmd, ELEVATION_TIMEOUT).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::TimedOut {
+                "Administrator access timed out waiting for a response.".to_string()
+            } else {
+                format!("failed to launch pkexec: {e}")
+            }
+        })?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
@@ -436,6 +515,53 @@ mod tests {
         assert_eq!(extract_marker_exit(stdout, MV_MARKER), Some(0));
         assert_eq!(extract_marker_exit(stdout, FLUSH_MARKER), Some(1));
         assert_eq!(extract_marker_exit(stdout, "MISSING"), None);
+    }
+
+    #[cfg(unix)]
+    fn echo_hello_command() -> Command {
+        let mut c = Command::new("echo");
+        c.arg("hello");
+        c
+    }
+    #[cfg(windows)]
+    fn echo_hello_command() -> Command {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "echo hello"]);
+        c
+    }
+
+    #[cfg(unix)]
+    fn sleep_command(secs: u64) -> Command {
+        let mut c = Command::new("sleep");
+        c.arg(secs.to_string());
+        c
+    }
+    #[cfg(windows)]
+    fn sleep_command(secs: u64) -> Command {
+        let mut c = Command::new("powershell");
+        c.args(["-NoProfile", "-Command", &format!("Start-Sleep -Seconds {secs}")]);
+        c
+    }
+
+    #[test]
+    fn run_with_timeout_returns_output_when_command_finishes_in_time() {
+        let output = run_with_timeout(echo_hello_command(), Duration::from_secs(5)).unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
+    }
+
+    #[test]
+    fn run_with_timeout_kills_and_errors_when_command_runs_too_long() {
+        let start = Instant::now();
+        let result = run_with_timeout(sleep_command(5), Duration::from_millis(300));
+        let elapsed = start.elapsed();
+
+        let err = result.expect_err("expected the long-running command to time out");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "expected the timeout to fire well before the 5s sleep finished naturally, took {elapsed:?}"
+        );
     }
 
     #[cfg(windows)]

@@ -98,8 +98,24 @@ pub fn install_and_write(
 
     let token = generate_token()?;
     let token_staging = staging_dir.join(".staging-helper-token");
-    std::fs::write(&token_staging, &token)
-        .map_err(|e| format!("Failed to stage the helper auth token: {e}"))?;
+    // Mode 0600 from the moment the file exists: `staging_dir` is a normal,
+    // non-root-owned app-data directory (unlike the elevated script's final
+    // destination below), so an in-between default-permissioned copy of the
+    // daemon's live auth token would be readable by any other local process
+    // running as this user for as long as it stuck around.
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&token_staging)
+            .map_err(|e| format!("Failed to stage the helper auth token: {e}"))?;
+        f.write_all(token.as_bytes())
+            .map_err(|e| format!("Failed to stage the helper auth token: {e}"))?;
+    }
 
     let hosts_staging = staging_dir.join(".staging-hosts");
     hosts_parser::atomic_write(&hosts_staging, hosts_content)
@@ -113,7 +129,13 @@ pub fn install_and_write(
         &hosts_staging,
         hosts_path,
         flush_cmd,
-    )?;
+    );
+    // Clean up regardless of outcome: the elevated script above only ever
+    // needs to read this file once (to `cp` it to its root-owned, 0600 final
+    // destination), so nothing should still depend on it existing here,
+    // success or failure.
+    let _ = std::fs::remove_file(&token_staging);
+    let outcome = outcome?;
 
     // Only persist the client's own copy once the elevated install chain
     // (which writes the daemon's root-owned copy at the same token value)

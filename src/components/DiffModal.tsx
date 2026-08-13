@@ -1,16 +1,22 @@
 import { useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { DiffPreview } from "../types";
-import { WarningIcon } from "./icons";
+import { Spinner, WarningIcon } from "./icons";
 
 interface DiffModalProps {
   c: ColorTokens;
   diff: DiffPreview;
+  /** True while `onConfirm`'s write is in flight — an elevation prompt can
+   * legitimately take a while to answer, so this disables both buttons
+   * (rather than letting a double-click or a "Cancel" click during that
+   * window fire a second write, or give the false impression that Cancel
+   * stopped a write that's already running) and shows a working state. */
+  confirming: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
+export function DiffModal({ c, diff, confirming, onCancel, onConfirm }: DiffModalProps) {
   const [shadowAck, setShadowAck] = useState(false);
 
   const cancelLabel = diff.mode === "view" ? "Close" : "Cancel";
@@ -25,14 +31,14 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
           : diff.mode === "adopt"
             ? "Adopt entry"
             : "Write to hosts file";
-  const confirmDisabled = diff.isShadowDomain && diff.mode === "save" && !shadowAck;
+  const confirmDisabled = confirming || (diff.isShadowDomain && diff.mode === "save" && !shadowAck);
   const modalWidth = diff.mode === "raw" ? 640 : 560;
 
   return (
     <>
       <div
         style={{ position: "absolute", inset: 0, background: c.overlay, zIndex: 70, animation: "hm-fade-in .15s ease" }}
-        onClick={onCancel}
+        onClick={confirming ? undefined : onCancel}
       />
       <div
         style={{
@@ -80,7 +86,12 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
                     fontWeight: 600,
                   }}
                 >
-                  <input type="checkbox" checked={shadowAck} onChange={(e) => setShadowAck(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={shadowAck}
+                    disabled={confirming}
+                    onChange={(e) => setShadowAck(e.target.checked)}
+                  />
                   I understand the risk and want to proceed
                 </label>
               </div>
@@ -248,6 +259,7 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
         <div style={{ padding: "16px 24px 20px", display: "flex", gap: 10 }}>
           <button
             onClick={onCancel}
+            disabled={confirming}
             style={{
               flex: 1,
               height: 38,
@@ -257,7 +269,8 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
               color: c.text,
               fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: confirming ? "not-allowed" : "pointer",
+              opacity: confirming ? 0.5 : 1,
             }}
           >
             {cancelLabel}
@@ -277,9 +290,14 @@ export function DiffModal({ c, diff, onCancel, onConfirm }: DiffModalProps) {
                 fontWeight: 600,
                 cursor: confirmDisabled ? "not-allowed" : "pointer",
                 opacity: confirmDisabled ? 0.5 : 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
               }}
             >
-              {confirmLabel}
+              {confirming && <Spinner size={12} color="#fff" />}
+              {confirming ? "Working…" : confirmLabel}
             </button>
           )}
         </div>

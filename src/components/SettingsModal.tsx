@@ -7,6 +7,10 @@ interface SettingsModalProps {
   c: ColorTokens;
   helperEnabled: boolean;
   helperActive: boolean;
+  /** Whether the privileged helper daemon exists on this OS at all
+   * (macOS-only). When false, the whole "Background helper" section is
+   * hidden rather than shown as a control that can never take effect. */
+  helperSupported: boolean;
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
@@ -32,6 +36,7 @@ export function SettingsModal({
   c,
   helperEnabled,
   helperActive,
+  helperSupported,
   launchAtLogin,
   autoFlushDns,
   confirmBeforeSave,
@@ -215,87 +220,91 @@ export function SettingsModal({
             </div>
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            <SectionLabel c={c}>Background helper</SectionLabel>
+          {helperSupported && (
+            <>
+              <div style={{ marginTop: 20 }}>
+                <SectionLabel c={c}>Background helper</SectionLabel>
 
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>Write without a password prompt</div>
-                <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 4, lineHeight: 1.5 }}>
-                  Installs a small privileged helper (one admin prompt) so hosts file writes and DNS flushes happen
-                  silently afterward.
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: helperActive ? c.green : c.textFaint,
-                      flex: "none",
-                    }}
-                  />
-                  <span style={{ fontSize: 11.5, color: c.textFaint }}>
-                    {helperActive ? "Active" : helperEnabled ? "Not installed yet" : "Disabled"}
-                  </span>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: c.text }}>Write without a password prompt</div>
+                    <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 4, lineHeight: 1.5 }}>
+                      Installs a small privileged helper (one admin prompt) so hosts file writes and DNS flushes happen
+                      silently afterward.
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: helperActive ? c.green : c.textFaint,
+                          flex: "none",
+                        }}
+                      />
+                      <span style={{ fontSize: 11.5, color: c.textFaint }}>
+                        {helperActive ? "Active" : helperEnabled ? "Not installed yet" : "Disabled"}
+                      </span>
+                    </div>
+                  </div>
+                  <ToggleSwitch checked={helperEnabled} onToggle={handleToggleClick} c={c} ariaLabel="Toggle background helper" />
                 </div>
               </div>
-              <ToggleSwitch checked={helperEnabled} onToggle={handleToggleClick} c={c} ariaLabel="Toggle background helper" />
-            </div>
-          </div>
 
-          {confirmingDisable && (
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                padding: "12px 14px",
-                borderRadius: 10,
-                background: c.redSoft,
-                border: `1px solid ${c.red}`,
-                marginTop: 14,
-              }}
-            >
-              <WarningIcon size={16} color={c.red} />
-              <div style={{ fontSize: 12.5, color: c.text, lineHeight: 1.5, flex: 1 }}>
-                <strong>Turning this off means every hosts file write will prompt for your password.</strong>
-                {helperActive && " The currently-installed helper will also be removed."}
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button
-                    onClick={() => setConfirmingDisable(false)}
-                    style={{
-                      height: 30,
-                      padding: "0 12px",
-                      borderRadius: 7,
-                      border: `1px solid ${c.border}`,
-                      background: "transparent",
-                      color: c.text,
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmDisable}
-                    style={{
-                      height: 30,
-                      padding: "0 12px",
-                      borderRadius: 7,
-                      border: "none",
-                      background: c.red,
-                      color: "#fff",
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Turn off
-                  </button>
+              {confirmingDisable && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    background: c.redSoft,
+                    border: `1px solid ${c.red}`,
+                    marginTop: 14,
+                  }}
+                >
+                  <WarningIcon size={16} color={c.red} />
+                  <div style={{ fontSize: 12.5, color: c.text, lineHeight: 1.5, flex: 1 }}>
+                    <strong>Turning this off means every hosts file write will prompt for your password.</strong>
+                    {helperActive && " The currently-installed helper will also be removed."}
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button
+                        onClick={() => setConfirmingDisable(false)}
+                        style={{
+                          height: 30,
+                          padding: "0 12px",
+                          borderRadius: 7,
+                          border: `1px solid ${c.border}`,
+                          background: "transparent",
+                          color: c.text,
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleConfirmDisable}
+                        style={{
+                          height: 30,
+                          padding: "0 12px",
+                          borderRadius: 7,
+                          border: "none",
+                          background: c.red,
+                          color: "#fff",
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Turn off
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>

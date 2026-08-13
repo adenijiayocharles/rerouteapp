@@ -1,12 +1,18 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { ColorTokens, Theme } from "../theme";
 import type { EntryDraft } from "../types";
-import { CloseIcon, PlusIcon, TrashIcon, CheckIcon } from "./icons";
+import { CloseIcon, PlusIcon, TrashIcon, CheckIcon, Spinner } from "./icons";
 
 interface DraftPanelProps {
   c: ColorTokens;
   theme: Theme;
   draft: EntryDraft;
+  /** True while a save/preview request triggered from this panel is in
+   * flight — for a brand-new entry, "Save" can trigger a real write
+   * directly (no confirmation modal), which can wait on an elevation
+   * prompt, so this disables the panel's actions rather than letting a
+   * double-click fire a second one. */
+  saving: boolean;
   onClose: () => void;
   onFieldChange: <K extends "hostname" | "group">(field: K, value: string) => void;
   onIpFieldChange: (uid: string, field: "label" | "ip", value: string) => void;
@@ -22,6 +28,7 @@ export function DraftPanel({
   c,
   theme,
   draft,
+  saving,
   onClose,
   onFieldChange,
   onIpFieldChange,
@@ -45,7 +52,7 @@ export function DraftPanel({
           zIndex: 50,
           animation: "hm-fade-in .15s ease",
         }}
-        onClick={onClose}
+        onClick={saving ? undefined : onClose}
       />
       <div
         className="hm-scroll"
@@ -78,6 +85,7 @@ export function DraftPanel({
           <div style={{ fontSize: 15, fontWeight: 700, color: c.text }}>{title}</div>
           <button
             onClick={onClose}
+            disabled={saving}
             style={{
               width: 28,
               height: 28,
@@ -85,7 +93,8 @@ export function DraftPanel({
               border: "none",
               background: "transparent",
               color: c.textFaint,
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.5 : 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -246,6 +255,7 @@ export function DraftPanel({
           {!isNew && (
             <button
               onClick={onDelete}
+              disabled={saving}
               style={{
                 height: 38,
                 padding: "0 16px",
@@ -256,7 +266,8 @@ export function DraftPanel({
                 color: "#fff",
                 fontSize: 13,
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: saving ? "not-allowed" : "pointer",
+                opacity: saving ? 0.5 : 1,
               }}
             >
               Delete
@@ -265,6 +276,7 @@ export function DraftPanel({
           <div style={{ flex: 1 }} />
           <button
             onClick={onClose}
+            disabled={saving}
             style={{
               width: 100,
               height: 38,
@@ -275,13 +287,15 @@ export function DraftPanel({
               textTransform: "uppercase",
               fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.5 : 1,
             }}
           >
             Cancel
           </button>
           <button
             onClick={onSave}
+            disabled={saving}
             style={{
               width: 140,
               height: 38,
@@ -292,10 +306,16 @@ export function DraftPanel({
               color: "#fff",
               fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.5 : 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
             }}
           >
-            {isNew ? "Save" : "Review changes"}
+            {saving && <Spinner size={12} color="#fff" />}
+            {saving ? "Working…" : isNew ? "Save" : "Review changes"}
           </button>
         </div>
       </div>

@@ -64,13 +64,17 @@ fn diff_middle(old_lines: &[&str], new_lines: &[&str]) -> Vec<DiffLine> {
         return result;
     }
 
-    let mut dp = vec![vec![0usize; m + 1]; n + 1];
+    // Flat Vec instead of Vec<Vec<_>>: one allocation instead of n+1, and
+    // cells in the same row stay contiguous, which matters for a table that
+    // can legitimately reach MAX_DP_CELLS entries.
+    let width = m + 1;
+    let mut dp = vec![0usize; (n + 1) * width];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
-            dp[i][j] = if old_lines[i] == new_lines[j] {
-                dp[i + 1][j + 1] + 1
+            dp[i * width + j] = if old_lines[i] == new_lines[j] {
+                dp[(i + 1) * width + (j + 1)] + 1
             } else {
-                dp[i + 1][j].max(dp[i][j + 1])
+                dp[(i + 1) * width + j].max(dp[i * width + (j + 1)])
             };
         }
     }
@@ -82,7 +86,7 @@ fn diff_middle(old_lines: &[&str], new_lines: &[&str]) -> Vec<DiffLine> {
             result.push(DiffLine { kind: "same".to_string(), text: old_lines[i].to_string() });
             i += 1;
             j += 1;
-        } else if dp[i + 1][j] >= dp[i][j + 1] {
+        } else if dp[(i + 1) * width + j] >= dp[i * width + (j + 1)] {
             result.push(DiffLine { kind: "removed".to_string(), text: old_lines[i].to_string() });
             i += 1;
         } else {

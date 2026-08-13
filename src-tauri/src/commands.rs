@@ -187,28 +187,47 @@ fn write_content_to_hosts_file(
     let client_token = helper_client::load_token(&state.app_data_dir);
     let reachable_token = client_token.as_deref().filter(|t| helper_client::ping(t));
 
-    let outcome = if let Some(token) = reachable_token {
-        let write_ok = helper_client::write_hosts(token, new_content).is_ok();
-        let flush_ok = if write_ok && do_flush {
-            Some(helper_client::flush_dns(token).is_ok())
-        } else {
-            None
-        };
-        elevate::WriteOutcome { write_ok, flush_ok }
-    } else if state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed) {
-        match helper_install::install_and_write(
-            app,
-            state.executor.as_ref(),
-            &state.backups_dir,
-            new_content,
-            &state.hosts_path,
-            flush_cmd.as_deref(),
-        ) {
-            Ok(outcome) => outcome,
-            Err(_) => plain_elevated_write(new_content)?,
+    // The attempt is a labeled block (not a helper function) so every
+    // failure path — not just a successfully *attempted* write that came
+    // back unsuccessful — goes through the same `last_written` cleanup
+    // below. Without this, a hard failure to even run the elevated command
+    // (cancelled, timed out, osascript/pkexec missing) would return early
+    // via `?` and skip resetting `last_written`, leaving it primed with
+    // content that was never actually written — so a later, unrelated
+    // external edit that happened to produce those exact same bytes would be
+    // silently mistaken for this write having landed.
+    let attempt: Result<elevate::WriteOutcome, String> = 'attempt: {
+        if let Some(token) = reachable_token {
+            let write_ok = helper_client::write_hosts(token, new_content).is_ok();
+            let flush_ok = if write_ok && do_flush {
+                Some(helper_client::flush_dns(token).is_ok())
+            } else {
+                None
+            };
+            break 'attempt Ok(elevate::WriteOutcome { write_ok, flush_ok });
         }
-    } else {
-        plain_elevated_write(new_content)?
+        if state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed) {
+            match helper_install::install_and_write(
+                app,
+                state.executor.as_ref(),
+                &state.backups_dir,
+                new_content,
+                &state.hosts_path,
+                flush_cmd.as_deref(),
+            ) {
+                Ok(outcome) => Ok(outcome),
+                Err(_) => plain_elevated_write(new_content),
+            }
+        } else {
+            plain_elevated_write(new_content)
+        }
+    };
+    let outcome = match attempt {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            *state.last_written.lock_recover() = None;
+            return Err(e);
+        }
     };
 
     if !outcome.write_ok {
@@ -264,12 +283,19 @@ fn flush_message_for(do_flush: bool, outcome: &elevate::WriteOutcome, hostname: 
     }
 }
 
+/// A ceiling under the Settings page's "Unlimited" history retention option
+/// — large enough that no realistic amount of everyday use ever reaches it
+/// (thousands of writes), but finite, so `HistoryView`'s unvirtualized list
+/// (and the `get_history` payload feeding it) has a hard upper bound instead
+/// of being able to grow without limit over months/years of use.
+const UNLIMITED_HISTORY_CAP: i64 = 5_000;
+
 /// Reads the Settings page "History retention" limit. Defaults to 200
-/// when unset; the "unlimited" option maps to `None` (no pruning).
+/// when unset; the "unlimited" option maps to `UNLIMITED_HISTORY_CAP`.
 fn history_retention_limit(conn: &rusqlite::Connection) -> Option<i64> {
     match store::get_setting(conn, "history_retention").ok().flatten() {
         None => Some(200),
-        Some(v) if v == "unlimited" => None,
+        Some(v) if v == "unlimited" => Some(UNLIMITED_HISTORY_CAP),
         Some(v) => v.parse::<i64>().ok().or(Some(200)),
     }
 }
@@ -472,5 +498,35 @@ mod tests {
         prune_backups(dir.path());
 
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    fn db_with_setting(value: Option<&str>) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        store::init_db(&conn).unwrap();
+        if let Some(v) = value {
+            store::set_setting(&conn, "history_retention", v).unwrap();
+        }
+        conn
+    }
+
+    #[test]
+    fn history_retention_limit_defaults_to_200_when_unset() {
+        let conn = db_with_setting(None);
+        assert_eq!(history_retention_limit(&conn), Some(200));
+    }
+
+    #[test]
+    fn history_retention_limit_parses_a_numeric_setting() {
+        let conn = db_with_setting(Some("50"));
+        assert_eq!(history_retention_limit(&conn), Some(50));
+    }
+
+    // "Unlimited" is capped, not truly boundless — a genuinely unbounded
+    // history table backs HistoryView's unvirtualized list, so this caps it
+    // at a large-but-finite ceiling instead (see UNLIMITED_HISTORY_CAP).
+    #[test]
+    fn history_retention_limit_caps_unlimited_instead_of_disabling_pruning() {
+        let conn = db_with_setting(Some("unlimited"));
+        assert_eq!(history_retention_limit(&conn), Some(UNLIMITED_HISTORY_CAP));
     }
 }

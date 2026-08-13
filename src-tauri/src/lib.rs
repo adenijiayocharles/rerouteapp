@@ -61,8 +61,15 @@ pub fn run() {
 
             let db_path = app_data_dir.join("reroute.sqlite3");
             let conn = Connection::open(&db_path)?;
+            // Without this, a reader on `read_conn` that happens to run
+            // during the brief window `conn` holds an exclusive lock at
+            // transaction commit gets an immediate "database is locked"
+            // error instead of transparently waiting the commit out — this
+            // makes that a non-issue for any realistically brief contention.
+            conn.busy_timeout(std::time::Duration::from_secs(5))?;
             store::init_db(&conn)?;
             let read_conn = Connection::open(&db_path)?;
+            read_conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
             // First-run import: if the DB has no entries yet but the
             // hosts file already has an app-managed block (e.g. a prior
@@ -136,6 +143,7 @@ pub fn run() {
             commands::raw_save::confirm_raw_save,
             commands::dns::flush_dns,
             commands::helper::helper_status,
+            commands::helper::helper_supported_on_this_platform,
             commands::helper::uninstall_helper,
             commands::helper::get_helper_enabled,
             commands::helper::set_helper_enabled,

@@ -158,13 +158,29 @@ fn switch_id(entry_id: &str, ip_id: &str) -> String {
     format!("{SWITCH_ID_PREFIX}{entry_id}::{ip_id}")
 }
 
+/// Native tray/menu event callbacks run synchronously on the OS's own main
+/// event-loop thread — so any of these branches that can end up needing an
+/// elevated write (no reachable helper daemon) would otherwise block that
+/// thread for as long as the OS admin-prompt is unanswered, freezing the
+/// whole app (window included), not just the tray. `elevate::run_with_timeout`
+/// now bounds how long that can ever take, but even a bounded few minutes is
+/// too long to hang the main thread for, so both write-capable actions
+/// (switching an IP, flushing DNS) are dispatched to a background thread
+/// instead of run inline. `Tray`/`Menu` mutations (e.g. `tray::sync` inside
+/// `switch_active_ip`) are safe to make from any thread — Tauri's own
+/// `set_menu`/`set_icon` etc. already marshal themselves onto the main
+/// thread internally.
 fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().0.as_str();
 
     if id == FLUSH_DNS_ID {
-        if let Err(e) = commands::dns::flush_dns(app.state::<AppState>()) {
-            eprintln!("tray: flush DNS failed: {e}");
-        }
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            let state = app_handle.state::<AppState>();
+            if let Err(e) = commands::dns::flush_dns(state) {
+                eprintln!("tray: flush DNS failed: {e}");
+            }
+        });
         return;
     }
 
@@ -180,12 +196,16 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         let Some((entry_id, ip_id)) = rest.split_once("::") else {
             return;
         };
+        let entry_id = entry_id.to_string();
+        let ip_id = ip_id.to_string();
         let app_handle = app.clone();
-        let state = app.state::<AppState>();
-        match commands::entries::switch_active_ip(app_handle, state, entry_id.to_string(), ip_id.to_string()) {
-            Ok(result) => notify_switch(app, &result),
-            Err(e) => eprintln!("tray: switch active IP failed: {e}"),
-        }
+        std::thread::spawn(move || {
+            let state = app_handle.state::<AppState>();
+            match commands::entries::switch_active_ip(app_handle.clone(), state, entry_id, ip_id) {
+                Ok(result) => notify_switch(&app_handle, &result),
+                Err(e) => eprintln!("tray: switch active IP failed: {e}"),
+            }
+        });
     }
 }
 

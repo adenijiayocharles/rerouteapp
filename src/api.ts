@@ -50,6 +50,7 @@ export const api = {
   flushDns: () => invoke<WriteResult>("flush_dns"),
 
   helperStatus: () => invoke<boolean>("helper_status"),
+  helperSupportedOnThisPlatform: () => invoke<boolean>("helper_supported_on_this_platform"),
   uninstallHelper: () => invoke<void>("uninstall_helper"),
   getHelperEnabled: () => invoke<boolean>("get_helper_enabled"),
   setHelperEnabled: (enabled: boolean) => invoke<void>("set_helper_enabled", { enabled }),
