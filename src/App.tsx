@@ -52,6 +52,7 @@ interface State {
   systemPrefersDark: boolean;
   view: "list" | "history" | "raw";
   search: string;
+  hostnameSort: "none" | "asc" | "desc";
   groupFilter: string | null;
   entries: Entry[];
   conflicts: Conflict[];
@@ -125,6 +126,7 @@ type Action =
   | { type: "CLEAR_GROUP_FILTER" }
   | { type: "RENAME_GROUP_FILTER"; oldName: string; newName: string }
   | { type: "SET_SEARCH"; value: string }
+  | { type: "TOGGLE_HOSTNAME_SORT" }
   | { type: "TOGGLE_IP_MENU"; id: string }
   | { type: "CLOSE_IP_MENU" }
   | { type: "SET_FLUSHING"; id: string | null }
@@ -159,6 +161,7 @@ const initialState: State = {
   systemPrefersDark: systemPrefersDarkNow(),
   view: "list",
   search: "",
+  hostnameSort: "none",
   groupFilter: null,
   entries: [],
   conflicts: [],
@@ -307,6 +310,10 @@ function reducer(state: State, action: Action): State {
       return state.groupFilter === action.oldName ? { ...state, groupFilter: action.newName } : state;
     case "SET_SEARCH":
       return { ...state, search: action.value };
+    case "TOGGLE_HOSTNAME_SORT": {
+      const next = state.hostnameSort === "none" ? "asc" : state.hostnameSort === "asc" ? "desc" : "none";
+      return { ...state, hostnameSort: next };
+    }
     case "TOGGLE_IP_MENU":
       return { ...state, openIpMenuId: state.openIpMenuId === action.id ? null : action.id };
     case "CLOSE_IP_MENU":
@@ -805,12 +812,15 @@ export default function App() {
 
   const filteredEntries = useMemo(() => {
     const search = state.search.trim().toLowerCase();
-    return state.entries.filter((e) => {
+    const filtered = state.entries.filter((e) => {
       if (state.groupFilter && e.group !== state.groupFilter) return false;
       if (!search) return true;
       return e.hostname.toLowerCase().includes(search) || (e.comment || "").toLowerCase().includes(search);
     });
-  }, [state.entries, state.search, state.groupFilter]);
+    if (state.hostnameSort === "none") return filtered;
+    const direction = state.hostnameSort === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => direction * a.hostname.localeCompare(b.hostname));
+  }, [state.entries, state.search, state.groupFilter, state.hostnameSort]);
 
   const filteredUnmanagedEntries = useMemo(() => {
     const search = state.search.trim().toLowerCase();
@@ -1138,6 +1148,7 @@ export default function App() {
   // don't re-render (and re-subscribe their effects) on every unrelated
   // App re-render — see EntryRow.tsx.
   const handleSearchChange = useCallback((value: string) => dispatch({ type: "SET_SEARCH", value }), []);
+  const handleToggleHostnameSort = useCallback(() => dispatch({ type: "TOGGLE_HOSTNAME_SORT" }), []);
   const handleOpenAddPanel = useCallback(() => dispatch({ type: "OPEN_ADD_PANEL" }), []);
   const handleClearGroupFilter = useCallback(() => dispatch({ type: "CLEAR_GROUP_FILTER" }), []);
   const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
@@ -1200,6 +1211,8 @@ export default function App() {
             unmanagedEntries={state.groupFilter ? [] : filteredUnmanagedEntries}
             search={state.search}
             onSearchChange={handleSearchChange}
+            hostnameSort={state.hostnameSort}
+            onToggleHostnameSort={handleToggleHostnameSort}
             onAddClick={handleOpenAddPanel}
             groupFilter={state.groupFilter}
             onClearGroupFilter={handleClearGroupFilter}

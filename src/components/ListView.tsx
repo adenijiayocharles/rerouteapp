@@ -13,6 +13,8 @@ interface ListViewProps {
   unmanagedEntries: UnmanagedEntry[];
   search: string;
   onSearchChange: (value: string) => void;
+  hostnameSort: "none" | "asc" | "desc";
+  onToggleHostnameSort: () => void;
   onAddClick: () => void;
   groupFilter: string | null;
   onClearGroupFilter: () => void;
@@ -38,6 +40,8 @@ export function ListView({
   unmanagedEntries,
   search,
   onSearchChange,
+  hostnameSort,
+  onToggleHostnameSort,
   onAddClick,
   groupFilter,
   onClearGroupFilter,
@@ -150,7 +154,35 @@ export function ListView({
           }}
         >
           <div />
-          <div>Hostname</div>
+          <button
+            onClick={onToggleHostnameSort}
+            title="Sort by hostname"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              font: "inherit",
+              letterSpacing: "inherit",
+              textTransform: "inherit",
+              color: hostnameSort === "none" ? c.textFaint : c.text,
+            }}
+          >
+            Hostname
+            <span
+              style={{
+                display: "flex",
+                opacity: hostnameSort === "none" ? 0.35 : 1,
+                transform: hostnameSort === "desc" ? "rotate(180deg)" : "none",
+                transition: "transform .12s ease",
+              }}
+            >
+              <ChevronDownIcon size={10} color={hostnameSort === "none" ? c.textFaint : c.text} />
+            </span>
+          </button>
           <div style={{ textAlign: "center" }}>Active IP</div>
           <div style={{ textAlign: "center" }}>Modified</div>
           <div />
