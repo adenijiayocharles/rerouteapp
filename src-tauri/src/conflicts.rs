@@ -32,14 +32,20 @@ pub struct Conflict {
 /// split first; comparison is case-insensitive, matching hosts-file/DNS
 /// lookup semantics. Returned sorted by hostname for stable output.
 pub fn find_conflicts(entries: &[Entry]) -> Vec<Conflict> {
-    let mut by_hostname: HashMap<String, Vec<ConflictMember>> = HashMap::new();
+    // Value is (first-seen original-case single hostname, members) — the
+    // map key has to be lowercased for case-insensitive grouping, but that
+    // key must never leak into `Conflict.hostname`: it would show the user
+    // an all-lowercase hostname that doesn't match what they actually typed
+    // or see anywhere else in the UI.
+    let mut by_hostname: HashMap<String, (String, Vec<ConflictMember>)> = HashMap::new();
 
     for entry in entries.iter().filter(|e| e.enabled) {
         let Some(active_ip) = entry.ips.iter().find(|ip| ip.id == entry.active_ip_id) else {
             continue;
         };
         for hostname in validate::split_hostnames(&entry.hostname) {
-            by_hostname.entry(hostname.to_lowercase()).or_default().push(ConflictMember {
+            let bucket = by_hostname.entry(hostname.to_lowercase()).or_insert_with(|| (hostname.clone(), Vec::new()));
+            bucket.1.push(ConflictMember {
                 entry_id: entry.id.clone(),
                 hostname: entry.hostname.clone(),
                 ip: active_ip.ip.clone(),
@@ -48,14 +54,14 @@ pub fn find_conflicts(entries: &[Entry]) -> Vec<Conflict> {
     }
 
     let mut conflicts: Vec<Conflict> = by_hostname
-        .into_iter()
+        .into_values()
         .filter_map(|(hostname, members)| {
             let distinct_ips: HashSet<&str> = members.iter().map(|m| m.ip.as_str()).collect();
             (distinct_ips.len() > 1).then_some(Conflict { hostname, members })
         })
         .collect();
 
-    conflicts.sort_by(|a, b| a.hostname.cmp(&b.hostname));
+    conflicts.sort_by_key(|c| c.hostname.to_lowercase());
     conflicts
 }
 
@@ -135,7 +141,10 @@ mod tests {
         let entries = vec![entry("a", "API.local", true, "10.0.0.1"), entry("b", "api.local", true, "10.0.0.2")];
         let conflicts = find_conflicts(&entries);
         assert_eq!(conflicts.len(), 1);
-        assert_eq!(conflicts[0].hostname, "api.local");
+        // Still matched as the same hostname despite the case difference,
+        // but displayed as the first entry actually typed it rather than
+        // silently lowercased.
+        assert_eq!(conflicts[0].hostname, "API.local");
     }
 
     #[test]

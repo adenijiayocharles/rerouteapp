@@ -107,6 +107,22 @@ fn check_helper_daemon(state: &AppState) -> DoctorCheck {
     let id = "helper";
     let label = "Helper daemon";
 
+    // The Settings toggle isn't platform-gated (it defaults to enabled
+    // everywhere — see `lib.rs::run`), but `helper_client`/`helper_install`
+    // are hard stubs on non-macOS. Without this early return, a Windows/Linux
+    // user would see "will be reinstalled on the next write" — a promise
+    // that can never be kept — instead of the truth: every write there
+    // already falls back to a one-off elevation prompt (see
+    // `commands.rs::write_content_to_hosts_file`).
+    if !cfg!(target_os = "macos") {
+        return DoctorCheck::new(
+            id,
+            label,
+            DoctorStatus::Ok,
+            "The background helper daemon is macOS-only; writes on this platform use a one-off elevation prompt each time.".to_string(),
+        );
+    }
+
     if !state.helper_enabled.load(std::sync::atomic::Ordering::Relaxed) {
         return DoctorCheck::new(
             id,
@@ -354,6 +370,7 @@ mod tests {
         assert_eq!(check_helper_daemon(&state).status, DoctorStatus::Ok);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn helper_daemon_warns_when_enabled_but_unreachable() {
         let dir = tempfile::tempdir().unwrap();
@@ -361,6 +378,21 @@ mod tests {
         // No client token file was written to app_data_dir, so this can't be reachable.
 
         assert_eq!(check_helper_daemon(&state).status, DoctorStatus::Warn);
+    }
+
+    // On non-macOS, helper_client::ping is a hard `false` stub regardless of
+    // the token file, so even with the setting enabled this must report Ok
+    // with a "not supported here" message rather than promising a reinstall
+    // that will never happen.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn helper_daemon_ok_and_explains_unsupported_when_enabled_on_non_macos() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = test_state(dir.path(), true);
+
+        let check = check_helper_daemon(&state);
+        assert_eq!(check.status, DoctorStatus::Ok);
+        assert!(check.detail.contains("macOS-only"));
     }
 
     #[test]

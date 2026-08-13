@@ -12,22 +12,32 @@ interface DoctorModalProps {
 export function DoctorModal({ c, onClose, runDiagnostics }: DoctorModalProps) {
   const [checks, setChecks] = useState<DoctorCheck[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [runToken, setRunToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    runDiagnostics().then((result) => {
-      if (!cancelled) {
-        setChecks(result);
-        setLoading(false);
-      }
-    });
+    setError(null);
+    runDiagnostics()
+      .then((result) => {
+        if (!cancelled) {
+          setChecks(result);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [runToken]);
 
   function handleCopyReport() {
     if (!checks) return;
@@ -87,6 +97,11 @@ export function DoctorModal({ c, onClose, runDiagnostics }: DoctorModalProps) {
               <Spinner size={14} color={c.accent} />
               <span style={{ fontSize: 12.5, color: c.textMuted }}>Running checks…</span>
             </div>
+          ) : error ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "24px 0", justifyContent: "center" }}>
+              <ErrorIcon size={14} color={c.red} />
+              <span style={{ fontSize: 12.5, color: c.textMuted }}>Couldn't run diagnostics: {error}</span>
+            </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {checks?.map((check) => <CheckRow key={check.id} c={c} check={check} />)}
@@ -106,7 +121,7 @@ export function DoctorModal({ c, onClose, runDiagnostics }: DoctorModalProps) {
             }}
           >
             <button
-              onClick={handleCopyReport}
+              onClick={() => setRunToken((t) => t + 1)}
               style={{
                 height: 30,
                 padding: "0 12px",
@@ -119,8 +134,26 @@ export function DoctorModal({ c, onClose, runDiagnostics }: DoctorModalProps) {
                 cursor: "pointer",
               }}
             >
-              {copied ? "Copied" : "Copy Report"}
+              Run Again
             </button>
+            {!error && (
+              <button
+                onClick={handleCopyReport}
+                style={{
+                  height: 30,
+                  padding: "0 12px",
+                  borderRadius: 7,
+                  border: `1px solid ${c.border}`,
+                  background: "transparent",
+                  color: c.text,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                {copied ? "Copied" : "Copy Report"}
+              </button>
+            )}
           </div>
         )}
       </div>
