@@ -26,6 +26,7 @@ import { DiffModal } from "./components/DiffModal";
 import { Toast } from "./components/Toast";
 import { ReloadBanner } from "./components/ReloadBanner";
 import { SettingsModal } from "./components/SettingsModal";
+import { SwitchIpModal } from "./components/SwitchIpModal";
 import { DoctorModal } from "./components/DoctorModal";
 import { OnboardingModal } from "./components/OnboardingModal";
 
@@ -81,6 +82,7 @@ interface State {
   helperSupported: boolean;
   settingsOpen: boolean;
   doctorOpen: boolean;
+  switchIpOpen: boolean;
   launchAtLogin: boolean;
   autoFlushDns: boolean;
   confirmBeforeSave: boolean;
@@ -121,6 +123,8 @@ type Action =
   | { type: "CLOSE_SETTINGS" }
   | { type: "OPEN_DOCTOR" }
   | { type: "CLOSE_DOCTOR" }
+  | { type: "OPEN_SWITCH_IP_MODAL" }
+  | { type: "CLOSE_SWITCH_IP_MODAL" }
   | { type: "GO_LIST" }
   | { type: "GO_HISTORY" }
   | { type: "GO_RAW" }
@@ -135,6 +139,7 @@ type Action =
   | { type: "CLOSE_IP_MENU" }
   | { type: "SET_FLUSHING"; id: string | null }
   | { type: "UPSERT_ENTRY"; entry: Entry }
+  | { type: "UPSERT_ENTRIES"; entries: Entry[] }
   | { type: "REMOVE_ENTRY"; id: string }
   | { type: "OPEN_ADD_PANEL" }
   | { type: "OPEN_EDIT_PANEL"; entry: Entry }
@@ -196,6 +201,7 @@ const initialState: State = {
   helperSupported: true,
   settingsOpen: false,
   doctorOpen: false,
+  switchIpOpen: false,
   launchAtLogin: false,
   autoFlushDns: true,
   confirmBeforeSave: false,
@@ -299,6 +305,10 @@ function reducer(state: State, action: Action): State {
       return { ...state, doctorOpen: true };
     case "CLOSE_DOCTOR":
       return { ...state, doctorOpen: false };
+    case "OPEN_SWITCH_IP_MODAL":
+      return { ...state, switchIpOpen: true };
+    case "CLOSE_SWITCH_IP_MODAL":
+      return { ...state, switchIpOpen: false };
     case "SET_THEME_PREFERENCE":
       return { ...state, themePreference: action.preference };
     case "SET_SYSTEM_PREFERS_DARK":
@@ -339,6 +349,12 @@ function reducer(state: State, action: Action): State {
           ? state.entries.map((e) => (e.id === action.entry.id ? action.entry : e))
           : [...state.entries, action.entry],
       };
+    }
+    case "UPSERT_ENTRIES": {
+      const byId = new Map(action.entries.map((e) => [e.id, e]));
+      const updated = state.entries.map((e) => byId.get(e.id) ?? e);
+      const newOnes = action.entries.filter((e) => !state.entries.some((existing) => existing.id === e.id));
+      return { ...state, entries: [...updated, ...newOnes] };
     }
     case "REMOVE_ENTRY":
       return { ...state, entries: state.entries.filter((e) => e.id !== action.id) };
@@ -1125,6 +1141,38 @@ export default function App() {
     }
   }, []);
 
+  const handleSwitchGroupIp = useCallback(async (group: string, ip: string) => {
+    dispatch({ type: "CLOSE_SWITCH_IP_MODAL" });
+    try {
+      const result = await api.switchGroupActiveIp(group, ip);
+      dispatch({ type: "UPSERT_ENTRIES", entries: result.entries });
+      for (const entry of result.entries) dispatch({ type: "CLEAR_IP_UNREACHABLE", entryId: entry.id });
+      await refreshHistory();
+      refreshConflicts().catch(() => {});
+      refreshHelperStatus().catch(() => {});
+      const count = result.entries.length;
+      const entryWord = count === 1 ? "entry" : "entries";
+      if (result.flushOk === false || (result.flushOk === null && result.flushMessage)) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "error", title: "DNS flush failed", message: result.flushMessage ?? "The DNS cache could not be flushed.", retryFlush: true },
+        });
+      } else if (result.conflictWarning) {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "warning", title: "IP switched", message: result.conflictWarning },
+        });
+      } else {
+        dispatch({
+          type: "SET_TOAST",
+          toast: { type: "success", title: "IP switched", message: `${count} ${entryWord} in "${group}" → ${ip} · DNS cache flushed` },
+        });
+      }
+    } catch (err) {
+      dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to switch IP", message: errorMessage(err) } });
+    }
+  }, []);
+
   const handleToggleEnabled = useCallback(async (entryId: string) => {
     try {
       const result = await api.toggleEnabled(entryId);
@@ -1181,6 +1229,7 @@ export default function App() {
   const handleToggleHostnameSort = useCallback(() => dispatch({ type: "TOGGLE_HOSTNAME_SORT" }), []);
   const handleOpenAddPanel = useCallback(() => dispatch({ type: "OPEN_ADD_PANEL" }), []);
   const handleClearGroupFilter = useCallback(() => dispatch({ type: "CLEAR_GROUP_FILTER" }), []);
+  const handleOpenSwitchIpModal = useCallback(() => dispatch({ type: "OPEN_SWITCH_IP_MODAL" }), []);
   const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
   const handleOpenEditPanel = useCallback((entry: Entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry }), []);
   const handleDeleteFromRow = useCallback((entryId: string) => handleRequestDelete(entryId), []);
@@ -1246,6 +1295,7 @@ export default function App() {
             onAddClick={handleOpenAddPanel}
             groupFilter={state.groupFilter}
             onClearGroupFilter={handleClearGroupFilter}
+            onOpenSwitchIpModal={handleOpenSwitchIpModal}
             openIpMenuId={state.openIpMenuId}
             flushingId={state.flushingId}
             disabled={state.externalChangeDetected}
@@ -1300,6 +1350,16 @@ export default function App() {
           confirming={state.confirmingDiff}
           onCancel={() => dispatch({ type: "CLOSE_DIFF" })}
           onConfirm={handleConfirmDiff}
+        />
+      )}
+
+      {state.switchIpOpen && state.groupFilter && (
+        <SwitchIpModal
+          c={c}
+          groupName={state.groupFilter}
+          entries={filteredEntries}
+          onCancel={() => dispatch({ type: "CLOSE_SWITCH_IP_MODAL" })}
+          onSwitchIp={handleSwitchGroupIp}
         />
       )}
 

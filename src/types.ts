@@ -92,6 +92,13 @@ export interface WriteResult {
   conflictWarning: string | null;
 }
 
+export interface GroupWriteResult {
+  entries: Entry[];
+  flushOk: boolean | null;
+  flushMessage: string | null;
+  conflictWarning: string | null;
+}
+
 export interface ConflictMember {
   entryId: string;
   hostname: string;

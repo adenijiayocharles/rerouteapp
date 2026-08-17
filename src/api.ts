@@ -9,6 +9,7 @@ import type {
   DoctorCheck,
   Entry,
   EntryDraft,
+  GroupWriteResult,
   HistoryEntry,
   HistoryRetention,
   LintDiagnostic,
@@ -27,6 +28,8 @@ export const api = {
 
   switchActiveIp: (entryId: string, ipId: string) =>
     invoke<WriteResult>("switch_active_ip", { entryId, ipId }),
+  switchGroupActiveIp: (group: string, ip: string) =>
+    invoke<GroupWriteResult>("switch_group_active_ip", { group, ip }),
   toggleEnabled: (entryId: string) => invoke<WriteResult>("toggle_enabled", { entryId }),
 
   historyDiff: (historyId: string) => invoke<DiffPreview>("history_diff", { historyId }),

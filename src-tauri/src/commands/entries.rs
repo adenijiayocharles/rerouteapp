@@ -6,9 +6,10 @@ use tauri::{AppHandle, Emitter, State};
 
 use super::{
     auto_flush_dns_enabled, backup_and_write, contains_control_chars, draft_to_entry, flush_message_for,
-    group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, WriteResult,
+    group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, GroupWriteResult, WriteResult,
 };
 use crate::conflicts::{self, Conflict};
+use crate::elevate;
 use crate::hosts_parser;
 use crate::models::{DiffPreview, Entry, EntryDraft, HistoryEntry};
 use crate::ping;
@@ -263,6 +264,95 @@ pub fn switch_active_ip(
         flush_message,
         conflict_warning,
     })
+}
+
+/// Like `flush_message_for`, but worded for a bulk switch across `count`
+/// entries in `group` rather than a single hostname.
+fn group_flush_message_for(do_flush: bool, outcome: &elevate::WriteOutcome, group: &str, ip: &str, count: usize) -> Option<String> {
+    if !do_flush {
+        return None;
+    }
+    let entry_word = if count == 1 { "entry" } else { "entries" };
+    match outcome.flush_ok {
+        Some(true) => None,
+        Some(false) => Some(format!(
+            "{count} {entry_word} in \u{201c}{group}\u{201d} now point to {ip}. The hosts file was saved, but the DNS cache could not be flushed \u{2014} old addresses may still be cached."
+        )),
+        None => Some(
+            "No supported DNS resolver cache was found on this system. The hosts file was saved, but you may need to flush DNS manually."
+                .to_string(),
+        ),
+    }
+}
+
+/// Switches the active IP, to `ip`, for every entry in `group` that has it
+/// among its candidates — one write, one history entry, one DNS flush,
+/// rather than replaying the single-entry `switch_active_ip` flow once per
+/// matching entry. Entries in the group without that candidate are left
+/// untouched (skipped, not errored). Mirrors `switch_active_ip`'s shape,
+/// but group-wide changes aren't tied to one entry, so — like sibling
+/// changes from group IP propagation in `confirm_save` — this writes a
+/// single summary history row rather than one per switched entry, and
+/// isn't restorable from history the way a single-entry change is.
+#[tauri::command]
+pub fn switch_group_active_ip(app: AppHandle, state: State<AppState>, group: String, ip: String) -> Result<GroupWriteResult, String> {
+    let mut conn = state.conn.lock_recover();
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    let switched = store::set_group_active_ip(&tx, &group, &ip).map_err(|e| e.to_string())?;
+    if switched.is_empty() {
+        return Err("No entries in this group have that IP address.".to_string());
+    }
+    let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
+
+    let do_flush = auto_flush_dns_enabled(&tx);
+    let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;
+    if !outcome.write_ok {
+        return Err("Failed to write the hosts file.".to_string());
+    }
+
+    store::insert_history(
+        &tx,
+        &group,
+        &format!("Switched active IP to {ip} for {} {}", switched.len(), if switched.len() == 1 { "entry" } else { "entries" }),
+        None,
+        None,
+        None,
+        Some(&backup_path),
+    )
+    .map_err(|e| e.to_string())?;
+    prune_history(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
+
+    // Same rationale as `switch_active_ip`'s own post-write ping: doesn't
+    // block the response, and the frontend already listens for
+    // `ping::IP_HEALTH_CHECKED_EVENT` per entry/ip pair regardless of which
+    // command triggered the switch.
+    for entry in &switched {
+        let app = app.clone();
+        let entry_id = entry.id.clone();
+        let ip_id = entry.active_ip_id.clone();
+        let ip_addr = ip.clone();
+        std::thread::spawn(move || {
+            let reachable = ping::is_reachable(&ip_addr);
+            let _ = app.emit(ping::IP_HEALTH_CHECKED_EVENT, ping::IpHealthResult { entry_id, ip_id, reachable });
+        });
+    }
+
+    let flush_message = group_flush_message_for(do_flush, &outcome, &group, &ip, switched.len());
+    let conflicts_list = conflicts::find_conflicts(&entries);
+    let mut warnings: Vec<String> = Vec::new();
+    for entry in &switched {
+        if let Some(w) = conflicts::warning_for_entry(&conflicts_list, &entry.id) {
+            if !warnings.contains(&w) {
+                warnings.push(w);
+            }
+        }
+    }
+    let conflict_warning = if warnings.is_empty() { None } else { Some(warnings.join(" ")) };
+
+    Ok(GroupWriteResult { entries: switched, flush_ok: outcome.flush_ok, flush_message, conflict_warning })
 }
 
 #[tauri::command]

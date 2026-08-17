@@ -364,6 +364,25 @@ pub fn set_active_ip(conn: &Connection, entry_id: &str, ip_id: &str) -> rusqlite
     Ok(get_entry(conn, entry_id)?.expect("entry must exist"))
 }
 
+/// Switches the active IP, to `ip`, for every entry in `group` that has
+/// `ip` among its candidates (matched by address, like
+/// `group_propagation_plan`); entries in the group without that address
+/// are left untouched. Returns the entries that were actually switched, in
+/// list order.
+pub fn set_group_active_ip(conn: &Connection, group: &str, ip: &str) -> rusqlite::Result<Vec<Entry>> {
+    let entries = list_entries(conn)?;
+    let mut switched = Vec::new();
+    for entry in &entries {
+        if entry.group != group {
+            continue;
+        }
+        if let Some(candidate) = entry.ips.iter().find(|c| c.ip == ip) {
+            switched.push(set_active_ip(conn, &entry.id, &candidate.id)?);
+        }
+    }
+    Ok(switched)
+}
+
 pub fn set_enabled(conn: &Connection, entry_id: &str, enabled: bool) -> rusqlite::Result<Entry> {
     conn.execute(
         "UPDATE entries SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
@@ -641,6 +660,60 @@ mod tests {
             active_uid: uid.clone(),
             ips: vec![IpDraft { uid, label: "primary".to_string(), ip: "10.0.0.1".to_string() }],
         }
+    }
+
+    fn draft_with_ips(hostname: &str, group: &str, ips: &[&str]) -> EntryDraft {
+        let ip_drafts: Vec<IpDraft> = ips
+            .iter()
+            .enumerate()
+            .map(|(i, ip)| IpDraft { uid: format!("{hostname}-ip{i}"), label: "primary".to_string(), ip: ip.to_string() })
+            .collect();
+        EntryDraft {
+            id: None,
+            hostname: hostname.to_string(),
+            comment: String::new(),
+            group: group.to_string(),
+            enabled: true,
+            active_uid: ip_drafts[0].uid.clone(),
+            ips: ip_drafts,
+        }
+    }
+
+    #[test]
+    fn set_group_active_ip_switches_matching_entries_and_skips_the_rest() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_with_ips("api.local", "Work", &["10.0.0.1", "10.0.0.5"])).unwrap();
+        let admin = insert_entry(&conn, &draft_with_ips("admin.local", "Work", &["10.0.0.1", "10.0.0.5"])).unwrap();
+        let lonely = insert_entry(&conn, &draft_with_ips("lonely.local", "Work", &["10.0.0.1"])).unwrap();
+        insert_entry(&conn, &draft_with_ips("other.local", "Elsewhere", &["10.0.0.5"])).unwrap();
+
+        let switched = set_group_active_ip(&conn, "Work", "10.0.0.5").unwrap();
+
+        let switched_ids: Vec<&str> = switched.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(switched_ids.len(), 2);
+        assert!(switched_ids.contains(&api.id.as_str()));
+        assert!(switched_ids.contains(&admin.id.as_str()));
+
+        let api_after = get_entry(&conn, &api.id).unwrap().unwrap();
+        let active = api_after.ips.iter().find(|c| c.id == api_after.active_ip_id).unwrap();
+        assert_eq!(active.ip, "10.0.0.5");
+
+        // lonely.local has no 10.0.0.5 candidate, and other.local isn't in
+        // "Work" — neither should have been touched.
+        let lonely_after = get_entry(&conn, &lonely.id).unwrap().unwrap();
+        assert_eq!(lonely_after.active_ip_id, lonely.active_ip_id);
+    }
+
+    #[test]
+    fn set_group_active_ip_is_a_noop_when_nothing_in_the_group_matches() {
+        let conn = setup();
+        let api = insert_entry(&conn, &draft_in_group("api.local", "Work")).unwrap();
+
+        let switched = set_group_active_ip(&conn, "Work", "192.168.1.1").unwrap();
+
+        assert!(switched.is_empty());
+        let after = get_entry(&conn, &api.id).unwrap().unwrap();
+        assert_eq!(after.active_ip_id, api.active_ip_id);
     }
 
     #[test]

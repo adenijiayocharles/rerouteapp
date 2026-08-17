@@ -18,6 +18,7 @@ interface ListViewProps {
   onAddClick: () => void;
   groupFilter: string | null;
   onClearGroupFilter: () => void;
+  onOpenSwitchIpModal: () => void;
   openIpMenuId: string | null;
   flushingId: string | null;
   disabled: boolean;
@@ -45,6 +46,7 @@ export function ListView({
   onAddClick,
   groupFilter,
   onClearGroupFilter,
+  onOpenSwitchIpModal,
   openIpMenuId,
   flushingId,
   disabled,
@@ -76,20 +78,37 @@ export function ListView({
           <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 8 }}>
             {subtitle}
             {groupFilter && (
-              <button
-                onClick={onClearGroupFilter}
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: c.accent,
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                Clear filter
-              </button>
+              <>
+                <button
+                  onClick={onOpenSwitchIpModal}
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: c.accent,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  Switch IP
+                </button>
+                 - 
+                <button
+                  onClick={onClearGroupFilter}
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: c.accent,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  Clear filter
+                </button>
+              </>
             )}
           </div>
         </div>
