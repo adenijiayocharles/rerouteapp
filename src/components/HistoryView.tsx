@@ -71,22 +71,24 @@ export function HistoryView({ c, history, onViewDiff, onRestore }: HistoryViewPr
             >
               View diff
             </button>
-            <button
-              onClick={() => onRestore(h.id)}
-              style={{
-                height: 30,
-                padding: "0 12px",
-                borderRadius: 7,
-                border: "none",
-                background: c.chipBg,
-                color: c.text,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Restore
-            </button>
+            {(h.before || h.after) && (
+              <button
+                onClick={() => onRestore(h.id)}
+                style={{
+                  height: 30,
+                  padding: "0 12px",
+                  borderRadius: 7,
+                  border: "none",
+                  background: c.chipBg,
+                  color: c.text,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Restore
+              </button>
+            )}
           </div>
         ))}
         {history.length === 0 && (

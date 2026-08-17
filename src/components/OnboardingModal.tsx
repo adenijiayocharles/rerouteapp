@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { errorMessage } from "../errorMessage";
 import type { ColorTokens } from "../theme";
 import type { UnmanagedEntry } from "../types";
 
@@ -7,10 +8,6 @@ interface OnboardingModalProps {
   entries: UnmanagedEntry[];
   onAdopt: (ids: string[]) => Promise<void>;
   onSkip: () => void;
-}
-
-function errorMessage(err: unknown): string {
-  return typeof err === "string" ? err : err instanceof Error ? err.message : "Something went wrong.";
 }
 
 export function OnboardingModal({ c, entries, onAdopt, onSkip }: OnboardingModalProps) {

@@ -285,19 +285,19 @@ export function reducer(state: State, action: Action): State {
     case "SET_SYSTEM_PREFERS_DARK":
       return { ...state, systemPrefersDark: action.prefersDark };
     case "GO_LIST":
-      return { ...state, view: "list", groupFilter: null };
+      return { ...state, view: "list", groupFilter: null, switchIpOpen: false };
     case "GO_HISTORY":
-      return { ...state, view: "history" };
+      return { ...state, view: "history", switchIpOpen: false };
     case "GO_RAW":
-      return { ...state, view: "raw" };
+      return { ...state, view: "raw", switchIpOpen: false };
     case "SET_RAW_FILE_CONTENT":
       return { ...state, rawFileContent: action.content, rawDraftContent: action.content };
     case "SET_RAW_DRAFT_CONTENT":
       return { ...state, rawDraftContent: action.content };
     case "SELECT_GROUP":
-      return { ...state, view: "list", groupFilter: action.group };
+      return { ...state, view: "list", groupFilter: action.group, switchIpOpen: false };
     case "CLEAR_GROUP_FILTER":
-      return { ...state, groupFilter: null };
+      return { ...state, groupFilter: null, switchIpOpen: false };
     case "RENAME_GROUP_FILTER":
       return state.groupFilter === action.oldName ? { ...state, groupFilter: action.newName } : state;
     case "SET_SEARCH":

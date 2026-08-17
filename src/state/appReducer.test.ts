@@ -98,6 +98,15 @@ describe("reducer: group filter", () => {
     expect(reducer(state, { type: "RENAME_GROUP_FILTER", oldName: "Elsewhere", newName: "Office" }).groupFilter).toBe("Work");
   });
 
+  it("switching views or groups closes the switch-IP modal, so it can't survive on top of the wrong screen", () => {
+    const open = baseState({ groupFilter: "Work", switchIpOpen: true });
+    expect(reducer(open, { type: "GO_HISTORY" }).switchIpOpen).toBe(false);
+    expect(reducer(open, { type: "GO_RAW" }).switchIpOpen).toBe(false);
+    expect(reducer(open, { type: "GO_LIST" }).switchIpOpen).toBe(false);
+    expect(reducer(open, { type: "SELECT_GROUP", group: "Home" }).switchIpOpen).toBe(false);
+    expect(reducer(open, { type: "CLEAR_GROUP_FILTER" }).switchIpOpen).toBe(false);
+  });
+
   it("OPEN_ADD_PANEL seeds the new draft's group from the active group filter", () => {
     const state = baseState({ groupFilter: "Work" });
     const next = reducer(state, { type: "OPEN_ADD_PANEL" });

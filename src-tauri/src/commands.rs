@@ -50,20 +50,6 @@ pub struct WriteResult {
     pub conflict_warning: Option<String>,
 }
 
-/// Result of `switch_group_active_ip` — like `WriteResult`, but for a bulk
-/// switch that can touch more than one entry (every entry in a group that
-/// has the chosen IP among its candidates) in a single write.
-#[derive(Serialize, Clone)]
-pub struct GroupWriteResult {
-    pub entries: Vec<Entry>,
-    #[serde(rename = "flushOk")]
-    pub flush_ok: Option<bool>,
-    #[serde(rename = "flushMessage")]
-    pub flush_message: Option<String>,
-    #[serde(rename = "conflictWarning")]
-    pub conflict_warning: Option<String>,
-}
-
 /// Rewrites the draft's hostname field to its canonical form: individual
 /// hostnames (however the user separated them — commas, whitespace, or the
 /// hosts file's native space-separated syntax) joined by a single space,

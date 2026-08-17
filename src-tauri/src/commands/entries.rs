@@ -2,11 +2,12 @@
 //! (the main Hosts list): add/edit, switch active IP, enable/disable,
 //! restore from history, and delete.
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use super::{
     auto_flush_dns_enabled, backup_and_write, contains_control_chars, draft_to_entry, flush_message_for,
-    group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, GroupWriteResult, WriteResult,
+    group_propagation_plans, normalize_draft_hostname, prune_history, validate_draft, WriteResult,
 };
 use crate::conflicts::{self, Conflict};
 use crate::elevate;
@@ -16,6 +17,23 @@ use crate::ping;
 use crate::state::{AppState, PoisonRecoverExt};
 use crate::store;
 use crate::validate;
+
+/// Result of `switch_group_active_ip` — like `WriteResult`, but for a bulk
+/// switch that can touch more than one entry (every entry in a group that
+/// has the chosen IP among its candidates) in a single write. Defined here
+/// rather than in `commands.rs` since (unlike `WriteResult`) it has exactly
+/// one consumer — see `commands/CLAUDE.md`'s "only what's shared across
+/// more than one submodule" rule for `commands.rs` itself.
+#[derive(Serialize, Clone)]
+pub struct GroupWriteResult {
+    pub entries: Vec<Entry>,
+    #[serde(rename = "flushOk")]
+    pub flush_ok: Option<bool>,
+    #[serde(rename = "flushMessage")]
+    pub flush_message: Option<String>,
+    #[serde(rename = "conflictWarning")]
+    pub conflict_warning: Option<String>,
+}
 
 #[tauri::command]
 pub fn list_entries(state: State<AppState>) -> Result<Vec<Entry>, String> {
@@ -299,11 +317,15 @@ pub fn switch_group_active_ip(app: AppHandle, state: State<AppState>, group: Str
     let mut conn = state.conn.lock_recover();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    let switched = store::set_group_active_ip(&tx, &group, &ip).map_err(|e| e.to_string())?;
-    if switched.is_empty() {
+    let switched_ids = store::set_group_active_ip(&tx, &group, &ip).map_err(|e| e.to_string())?;
+    if switched_ids.is_empty() {
         return Err("No entries in this group have that IP address.".to_string());
     }
     let entries = store::list_entries(&tx).map_err(|e| e.to_string())?;
+    // Built from the same `list_entries` call the write below regenerates
+    // the hosts file from, rather than a second per-entry fetch — see
+    // `store::set_group_active_ip`.
+    let switched: Vec<Entry> = entries.iter().filter(|e| switched_ids.contains(&e.id)).cloned().collect();
 
     let do_flush = auto_flush_dns_enabled(&tx);
     let (outcome, backup_path) = backup_and_write(&app, &state, &entries, do_flush)?;

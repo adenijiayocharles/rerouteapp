@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
 import { CloseIcon } from "./icons";
@@ -18,30 +19,41 @@ interface IpOption {
 /** Every distinct IP address used across `entries`, each paired with how
  * many of those entries carry it — not every entry in the group necessarily
  * has every address, so picking one only switches the entries that do
- * (the rest are left untouched, see `switch_group_active_ip`). */
+ * (the rest are left untouched, see `switch_group_active_ip`). Counts by
+ * unique entry, not by candidate row, so an entry with two candidates that
+ * happen to share an address (not rejected by draft validation) isn't
+ * counted twice for that one entry. */
 function distinctIps(entries: Entry[]): IpOption[] {
-  const options: IpOption[] = [];
+  const countByIp = new Map<string, number>();
   for (const entry of entries) {
-    for (const candidate of entry.ips) {
-      const existing = options.find((o) => o.ip === candidate.ip);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        options.push({ ip: candidate.ip, count: 1 });
-      }
+    const ipsInEntry = new Set(entry.ips.map((candidate) => candidate.ip));
+    for (const ip of ipsInEntry) {
+      countByIp.set(ip, (countByIp.get(ip) ?? 0) + 1);
     }
   }
-  return options.sort((a, b) => a.ip.localeCompare(b.ip));
+  return Array.from(countByIp, ([ip, count]) => ({ ip, count })).sort((a, b) => a.ip.localeCompare(b.ip));
 }
 
 export function SwitchIpModal({ c, groupName, entries, onCancel, onSwitchIp }: SwitchIpModalProps) {
   const options = distinctIps(entries);
+  // Guards against a double-click (or clicking two different IP rows in
+  // quick succession) firing two concurrent switch_group_active_ip calls —
+  // the parent closes this modal on selection, but that's a dispatch, not
+  // an immediate unmount, so there's a window where a second click can
+  // still land.
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleSelect(ip: string) {
+    if (submitting) return;
+    setSubmitting(true);
+    onSwitchIp(groupName, ip);
+  }
 
   return (
     <>
       <div
         style={{ position: "absolute", inset: 0, background: c.overlay, zIndex: 70, animation: "hm-fade-in .15s ease" }}
-        onClick={onCancel}
+        onClick={submitting ? undefined : onCancel}
       />
       <div
         style={{
@@ -67,6 +79,7 @@ export function SwitchIpModal({ c, groupName, entries, onCancel, onSwitchIp }: S
           </div>
           <button
             onClick={onCancel}
+            disabled={submitting}
             style={{
               width: 26,
               height: 26,
@@ -74,7 +87,7 @@ export function SwitchIpModal({ c, groupName, entries, onCancel, onSwitchIp }: S
               border: "none",
               background: "transparent",
               color: c.textMuted,
-              cursor: "pointer",
+              cursor: submitting ? "not-allowed" : "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -93,7 +106,8 @@ export function SwitchIpModal({ c, groupName, entries, onCancel, onSwitchIp }: S
               {options.map((opt) => (
                 <button
                   key={opt.ip}
-                  onClick={() => onSwitchIp(groupName, opt.ip)}
+                  onClick={() => handleSelect(opt.ip)}
+                  disabled={submitting}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -103,10 +117,11 @@ export function SwitchIpModal({ c, groupName, entries, onCancel, onSwitchIp }: S
                     borderRadius: 8,
                     border: `1px solid ${c.border}`,
                     background: "transparent",
-                    cursor: "pointer",
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    opacity: submitting ? 0.6 : 1,
                     textAlign: "left",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = c.rowHover)}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = submitting ? "transparent" : c.rowHover)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 600, color: c.text }}>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorMessage } from "../errorMessage";
 import type { ColorTokens } from "../theme";
 import type { DoctorCheck, DoctorStatus } from "../types";
 import { CloseIcon, ErrorIcon, PulseIcon, Spinner, SuccessIcon, WarningIcon } from "./icons";
@@ -29,7 +30,7 @@ export function DoctorModal({ c, onClose, runDiagnostics }: DoctorModalProps) {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errorMessage(err));
           setLoading(false);
         }
       });

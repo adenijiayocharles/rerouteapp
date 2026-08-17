@@ -20,6 +20,7 @@ Frontend (run from repo root):
 npm run dev       # vite dev server only (rarely useful alone — prefer `npm run tauri dev`)
 npm run build     # tsc typecheck + vite production build
 npx tsc --noEmit  # typecheck only
+npm test          # vitest — reducer/derived-state unit tests under src/state/*.test.ts
 npm run tauri dev # full app: builds the helper daemon, then launches Tauri (Rust) + Vite
 npm run tauri build
 ```
@@ -34,8 +35,9 @@ cargo test -p helper          # admin-group detection tests — must run as an a
 cargo clippy --workspace --all-targets
 ```
 
-There is no separate JS test runner configured; Rust tests are the primary automated test coverage
-(hosts-file parsing/rendering, validation, diffing, history pruning, wire protocol, admin detection).
+Rust tests are the primary automated test coverage (hosts-file parsing/rendering, validation, diffing,
+history pruning, wire protocol, admin detection). Vitest covers the frontend's reducer and pure derived-state
+logic (`src/state/*.test.ts`) — deliberately not the component tree, which has no test harness configured.
 
 **Known environment gotcha:** if `cargo build`/`test`/`clippy` on `reroute` fails with `failed to read plugin
 permissions: ... No such file or directory`, it's a stale build-script-output cache pointing at a build

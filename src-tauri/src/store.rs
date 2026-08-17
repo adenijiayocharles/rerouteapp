@@ -367,20 +367,27 @@ pub fn set_active_ip(conn: &Connection, entry_id: &str, ip_id: &str) -> rusqlite
 /// Switches the active IP, to `ip`, for every entry in `group` that has
 /// `ip` among its candidates (matched by address, like
 /// `group_propagation_plan`); entries in the group without that address
-/// are left untouched. Returns the entries that were actually switched, in
-/// list order.
-pub fn set_group_active_ip(conn: &Connection, group: &str, ip: &str) -> rusqlite::Result<Vec<Entry>> {
+/// are left untouched. Returns the ids of entries that were actually
+/// switched, in list order — not the updated `Entry` values, since
+/// `switch_group_active_ip` re-fetches everything via `list_entries` right
+/// after this anyway (to regenerate the hosts file), so doing a `get_entry`
+/// SELECT per switched entry here would just be discarded, redundant I/O.
+pub fn set_group_active_ip(conn: &Connection, group: &str, ip: &str) -> rusqlite::Result<Vec<String>> {
     let entries = list_entries(conn)?;
-    let mut switched = Vec::new();
+    let mut switched_ids = Vec::new();
     for entry in &entries {
         if entry.group != group {
             continue;
         }
         if let Some(candidate) = entry.ips.iter().find(|c| c.ip == ip) {
-            switched.push(set_active_ip(conn, &entry.id, &candidate.id)?);
+            conn.execute(
+                "UPDATE entries SET active_ip_id = ?1, updated_at = ?2 WHERE id = ?3",
+                params![candidate.id, now(), entry.id],
+            )?;
+            switched_ids.push(entry.id.clone());
         }
     }
-    Ok(switched)
+    Ok(switched_ids)
 }
 
 pub fn set_enabled(conn: &Connection, entry_id: &str, enabled: bool) -> rusqlite::Result<Entry> {
@@ -687,12 +694,11 @@ mod tests {
         let lonely = insert_entry(&conn, &draft_with_ips("lonely.local", "Work", &["10.0.0.1"])).unwrap();
         insert_entry(&conn, &draft_with_ips("other.local", "Elsewhere", &["10.0.0.5"])).unwrap();
 
-        let switched = set_group_active_ip(&conn, "Work", "10.0.0.5").unwrap();
+        let switched_ids = set_group_active_ip(&conn, "Work", "10.0.0.5").unwrap();
 
-        let switched_ids: Vec<&str> = switched.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(switched_ids.len(), 2);
-        assert!(switched_ids.contains(&api.id.as_str()));
-        assert!(switched_ids.contains(&admin.id.as_str()));
+        assert!(switched_ids.contains(&api.id));
+        assert!(switched_ids.contains(&admin.id));
 
         let api_after = get_entry(&conn, &api.id).unwrap().unwrap();
         let active = api_after.ips.iter().find(|c| c.id == api_after.active_ip_id).unwrap();
