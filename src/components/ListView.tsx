@@ -81,13 +81,14 @@ export function ListView({
               <>
                 <button
                   onClick={onOpenSwitchIpModal}
+                  disabled={disabled}
                   style={{
                     fontSize: 11.5,
                     fontWeight: 600,
-                    color: c.accent,
+                    color: disabled ? c.textFaint : c.accent,
                     background: "transparent",
                     border: "none",
-                    cursor: "pointer",
+                    cursor: disabled ? "not-allowed" : "pointer",
                     padding: 0,
                   }}
                 >

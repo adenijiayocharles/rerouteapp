@@ -860,6 +860,15 @@ export default function App() {
     return [...filtered].sort((a, b) => direction * a.hostname.localeCompare(b.hostname));
   }, [state.entries, state.search, state.groupFilter, state.hostnameSort]);
 
+  // Entries in the active group filter, unaffected by the search box — the
+  // backend's switch_group_active_ip matches by group alone, so SwitchIpModal
+  // must show the same set it's about to switch rather than filteredEntries,
+  // which also excludes hostnames the search box currently hides.
+  const groupEntries = useMemo(
+    () => (state.groupFilter ? state.entries.filter((e) => e.group === state.groupFilter) : []),
+    [state.entries, state.groupFilter],
+  );
+
   const filteredUnmanagedEntries = useMemo(() => {
     const search = state.search.trim().toLowerCase();
     if (!search) return state.unmanagedEntries;
@@ -1357,7 +1366,7 @@ export default function App() {
         <SwitchIpModal
           c={c}
           groupName={state.groupFilter}
-          entries={filteredEntries}
+          entries={groupEntries}
           onCancel={() => dispatch({ type: "CLOSE_SWITCH_IP_MODAL" })}
           onSwitchIp={handleSwitchGroupIp}
         />
