@@ -124,6 +124,8 @@ export function ListView({
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search hosts…"
+              autoComplete="off"
+              autoCapitalize="off"
               style={{
                 width: 220,
                 height: 34,

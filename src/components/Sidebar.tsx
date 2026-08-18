@@ -211,6 +211,8 @@ function GroupRow({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onBlur={commit}
+            autoComplete="off"
+            autoCapitalize="off"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();

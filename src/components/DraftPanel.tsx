@@ -110,6 +110,8 @@ export function DraftPanel({
               value={draft.hostname}
               onChange={(e) => onFieldChange("hostname", e.target.value)}
               placeholder="api.myapp.local, admin.myapp.local"
+              autoComplete="off"
+              autoCapitalize="off"
               style={inputStyle(c, theme, true)}
             />
             <div style={{ fontSize: 11.5, color: theme === "light" ? c.textMuted : c.textFaint, marginTop: 6 }}>
@@ -177,12 +179,16 @@ export function DraftPanel({
                       value={row.label}
                       onChange={(e) => onIpFieldChange(row.uid, "label", e.target.value)}
                       placeholder="Label"
+                      autoComplete="off"
+                      autoCapitalize="off"
                       style={{ ...inputStyle(c, theme, false), width: 76, height: 28, fontSize: 12 }}
                     />
                     <input
                       value={row.ip}
                       onChange={(e) => onIpFieldChange(row.uid, "ip", e.target.value)}
                       placeholder="127.0.0.1"
+                      autoComplete="off"
+                      autoCapitalize="off"
                       style={{ ...inputStyle(c, theme, true), flex: 1, height: 28, fontSize: 12.5, minWidth: 0 }}
                     />
                     <button
@@ -217,6 +223,8 @@ export function DraftPanel({
               value={draft.group}
               onChange={(e) => onFieldChange("group", e.target.value)}
               placeholder="e.g. Work"
+              autoComplete="off"
+              autoCapitalize="off"
               style={{ ...inputStyle(c, theme, false), marginTop: 6 }}
             />
           </div>
