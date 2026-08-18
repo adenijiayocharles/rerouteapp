@@ -62,6 +62,7 @@ export default function App() {
   const handleOpenSwitchIpModal = useCallback(() => dispatch({ type: "OPEN_SWITCH_IP_MODAL" }), []);
   const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
   const handleOpenEditPanel = useCallback((entry: Entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry }), []);
+  const handleDuplicateEntry = useCallback((entry: Entry) => dispatch({ type: "DUPLICATE_ENTRY", entry }), []);
   const handleDeleteFromRow = useCallback((entryId: string) => entryFlow.handleRequestDelete(entryId), [entryFlow.handleRequestDelete]);
 
   return (
@@ -132,6 +133,7 @@ export default function App() {
             onToggleDropdown={handleToggleIpMenu}
             onToggleEnabled={entryFlow.handleToggleEnabled}
             onEdit={handleOpenEditPanel}
+            onDuplicate={handleDuplicateEntry}
             onDelete={handleDeleteFromRow}
             onSwitchIp={entryFlow.handleSwitchIp}
             onAdopt={entryFlow.handleRequestAdopt}

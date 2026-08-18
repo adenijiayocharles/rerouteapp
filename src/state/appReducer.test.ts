@@ -157,6 +157,49 @@ describe("reducer: draft editing", () => {
     });
   });
 
+  it("DUPLICATE_ENTRY seeds a new (id: null) draft from an existing entry's fields", () => {
+    const state = baseState();
+    const entry = makeEntry({
+      hostname: "api.local",
+      comment: "prod",
+      group: "Work",
+      enabled: false,
+      ips: [{ id: "ip1", label: "primary", ip: "10.0.0.1" }],
+    });
+    const next = reducer(state, { type: "DUPLICATE_ENTRY", entry });
+    expect(next.editingDraft).toMatchObject({
+      id: null,
+      hostname: "api.local",
+      comment: "prod",
+      group: "Work",
+      enabled: false,
+    });
+  });
+
+  it("DUPLICATE_ENTRY assigns fresh ip uids instead of reusing the source entry's ip ids", () => {
+    const state = baseState();
+    const entry = makeEntry({
+      activeIpId: "ip1",
+      ips: [
+        { id: "ip1", label: "primary", ip: "10.0.0.1" },
+        { id: "ip2", label: "backup", ip: "10.0.0.2" },
+      ],
+    });
+    const next = reducer(state, { type: "DUPLICATE_ENTRY", entry });
+    const uids = next.editingDraft?.ips.map((r) => r.uid) ?? [];
+    expect(uids).toHaveLength(2);
+    expect(uids).not.toContain("ip1");
+    expect(uids).not.toContain("ip2");
+    expect(new Set(uids).size).toBe(2);
+    expect(next.editingDraft?.ips.map((r) => ({ label: r.label, ip: r.ip }))).toEqual([
+      { label: "primary", ip: "10.0.0.1" },
+      { label: "backup", ip: "10.0.0.2" },
+    ]);
+    // activeUid must point at the fresh uid for what was the active IP (ip1), not the stale id.
+    const activeRow = next.editingDraft?.ips.find((r) => r.ip === "10.0.0.1");
+    expect(next.editingDraft?.activeUid).toBe(activeRow?.uid);
+  });
+
   it("REMOVE_DRAFT_IP_ROW reassigns activeUid to the first remaining row when the active row is removed", () => {
     const state = baseState({
       editingDraft: {

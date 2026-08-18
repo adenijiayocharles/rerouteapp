@@ -25,6 +25,7 @@ interface ListViewProps {
   onToggleDropdown: (entryId: string) => void;
   onToggleEnabled: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
+  onDuplicate: (entry: Entry) => void;
   onDelete: (entryId: string) => void;
   onSwitchIp: (entryId: string, ipId: string) => void;
   onAdopt: (id: string) => void;
@@ -53,6 +54,7 @@ export function ListView({
   onToggleDropdown,
   onToggleEnabled,
   onEdit,
+  onDuplicate,
   onDelete,
   onSwitchIp,
   onAdopt,
@@ -224,6 +226,7 @@ export function ListView({
               onToggleDropdown={onToggleDropdown}
               onToggleEnabled={onToggleEnabled}
               onEdit={onEdit}
+              onDuplicate={onDuplicate}
               onDelete={onDelete}
               onSwitchIp={onSwitchIp}
             />

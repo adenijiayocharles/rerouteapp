@@ -108,6 +108,7 @@ export type Action =
   | { type: "REMOVE_ENTRY"; id: string }
   | { type: "OPEN_ADD_PANEL" }
   | { type: "OPEN_EDIT_PANEL"; entry: Entry }
+  | { type: "DUPLICATE_ENTRY"; entry: Entry }
   | { type: "CLOSE_DRAFT" }
   | { type: "UPDATE_DRAFT_FIELD"; field: "hostname" | "group"; value: string }
   | { type: "UPDATE_DRAFT_IP"; uid: string; field: "label" | "ip"; value: string }
@@ -357,6 +358,23 @@ export function reducer(state: State, action: Action): State {
           ips: action.entry.ips.map((i) => ({ uid: i.id, label: i.label, ip: i.ip })),
         },
       };
+    case "DUPLICATE_ENTRY": {
+      const ips = action.entry.ips.map((i) => ({ uid: crypto.randomUUID(), label: i.label, ip: i.ip }));
+      const activeSource = action.entry.ips.findIndex((i) => i.id === action.entry.activeIpId);
+      const activeUid = ips[activeSource >= 0 ? activeSource : 0]?.uid ?? "";
+      return {
+        ...state,
+        editingDraft: {
+          id: null,
+          hostname: action.entry.hostname,
+          comment: action.entry.comment,
+          group: action.entry.group,
+          enabled: action.entry.enabled,
+          activeUid,
+          ips,
+        },
+      };
+    }
     case "CLOSE_DRAFT":
       return { ...state, editingDraft: null, savingDraft: false };
     case "SET_SAVING_DRAFT":

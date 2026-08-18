@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
-import { CheckIcon, ChevronDownIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon, WarningIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, CopyIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon, WarningIcon } from "./icons";
 
 interface EntryRowProps {
   c: ColorTokens;
@@ -16,6 +16,7 @@ interface EntryRowProps {
   onToggleDropdown: (entryId: string) => void;
   onToggleEnabled: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
+  onDuplicate: (entry: Entry) => void;
   onDelete: (entryId: string) => void;
   onSwitchIp: (entryId: string, ipId: string) => void;
 }
@@ -41,6 +42,7 @@ export const EntryRow = memo(function EntryRow({
   onToggleDropdown,
   onToggleEnabled,
   onEdit,
+  onDuplicate,
   onDelete,
   onSwitchIp,
 }: EntryRowProps) {
@@ -320,6 +322,30 @@ export const EntryRow = memo(function EntryRow({
             >
               <EditIcon size={13} />
               Edit
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onDuplicate(entry);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "8px 9px",
+                borderRadius: 7,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: c.text,
+              }}
+            >
+              <CopyIcon size={13} />
+              Duplicate
             </button>
             <button
               onClick={() => {
