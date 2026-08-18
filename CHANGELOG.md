@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-18
+
+### Added
+
+- Host-group bulk IP switching: filtering the list to a group now shows a "Switch IP" link next to "Clear
+  filter" that opens a picker of every IP address used across the group's entries. Selecting one switches
+  every entry in the group that has it as an option, in a single write; entries without that address are left
+  untouched.
+
+### Internal
+
+- Added Vitest and unit tests for the frontend's reducer and derived list-filtering logic.
+- Split `App.tsx` (previously ~1400 lines) into a tested reducer module (`src/state/appReducer.ts`), pure
+  derived-state functions (`src/state/deriveListData.ts`), and focused hooks under `src/hooks/` for data
+  refresh, the auto-updater, settings sync, app bootstrap, Tauri event listeners, and the hosts-file write
+  pipeline. No behavior change.
+
 ## [0.5.2] - 2026-08-14
 
 ### Added
@@ -191,7 +208,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.4.0...v0.5.0

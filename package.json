@@ -1,7 +1,7 @@
 {
   "name": "reroute",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "re:route - manage system hosts file entries via a GUI",
   "license": "MIT",
   "author": "Adeniji Charles Ayodipupo",
