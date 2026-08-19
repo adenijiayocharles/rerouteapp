@@ -17,6 +17,7 @@ interface ListViewProps {
   onToggleHostnameSort: () => void;
   onAddClick: () => void;
   groupFilter: string | null;
+  favoritesFilter: boolean;
   onClearGroupFilter: () => void;
   onOpenSwitchIpModal: () => void;
   openIpMenuId: string | null;
@@ -47,6 +48,7 @@ export function ListView({
   onToggleHostnameSort,
   onAddClick,
   groupFilter,
+  favoritesFilter,
   onClearGroupFilter,
   onOpenSwitchIpModal,
   openIpMenuId,
@@ -63,7 +65,11 @@ export function ListView({
   unmanagedCollapsed,
   onToggleUnmanagedCollapsed,
 }: ListViewProps) {
-  const subtitle = groupFilter ? `${groupFilter} · ${entries.length} entries` : `${totalEntryCount} managed entries`;
+  const subtitle = groupFilter
+    ? `${groupFilter} · ${entries.length} entries`
+    : favoritesFilter
+      ? `Favourites · ${entries.length} entries`
+      : `${totalEntryCount} managed entries`;
 
   return (
     <div className="hm-scroll" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
@@ -81,24 +87,28 @@ export function ListView({
           <div style={{ fontSize: 20, fontWeight: 700, color: c.text, letterSpacing: "-0.01em" }}>Hosts</div>
           <div style={{ fontSize: 12.5, color: c.textMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 8 }}>
             {subtitle}
-            {groupFilter && (
+            {(groupFilter || favoritesFilter) && (
               <>
-                <button
-                  onClick={onOpenSwitchIpModal}
-                  disabled={disabled}
-                  style={{
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: disabled ? c.textFaint : c.accent,
-                    background: "transparent",
-                    border: "none",
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    padding: 0,
-                  }}
-                >
-                  Switch IP
-                </button>
-                 - 
+                {groupFilter && (
+                  <>
+                    <button
+                      onClick={onOpenSwitchIpModal}
+                      disabled={disabled}
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: disabled ? c.textFaint : c.accent,
+                        background: "transparent",
+                        border: "none",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      Switch IP
+                    </button>
+                     -
+                  </>
+                )}
                 <button
                   onClick={onClearGroupFilter}
                   style={{

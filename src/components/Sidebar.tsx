@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ColorTokens } from "../theme";
-import { EditIcon, FileIcon, HistoryIcon, ListIcon } from "./icons";
+import { EditIcon, FileIcon, HistoryIcon, ListIcon, StarIcon } from "./icons";
 
 export interface GroupSummary {
   name: string;
@@ -18,6 +18,9 @@ interface SidebarProps {
   groupFilter: string | null;
   onSelectGroup: (group: string) => void;
   onRenameGroup: (oldName: string, newName: string) => void;
+  favoritesCount: number;
+  favoritesFilter: boolean;
+  onSelectFavorites: () => void;
 }
 
 export function Sidebar({
@@ -31,6 +34,9 @@ export function Sidebar({
   groupFilter,
   onSelectGroup,
   onRenameGroup,
+  favoritesCount,
+  favoritesFilter,
+  onSelectFavorites,
 }: SidebarProps) {
   return (
     <div
@@ -56,6 +62,16 @@ export function Sidebar({
         label="Hosts"
         trailing={entryCount}
       />
+      {favoritesCount > 0 && (
+        <NavButton
+          c={c}
+          active={favoritesFilter}
+          onClick={onSelectFavorites}
+          icon={<StarIcon color={favoritesFilter ? c.accent : c.textMuted} filled={favoritesFilter} />}
+          label="Favourites"
+          trailing={favoritesCount}
+        />
+      )}
       <NavButton
         c={c}
         active={view === "history"}

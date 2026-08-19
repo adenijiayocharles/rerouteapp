@@ -13,8 +13,8 @@ import {
  * unit-testable without React. */
 export function useDerivedListData(state: State) {
   const filteredEntries = useMemo(
-    () => filterAndSortEntries(state.entries, state.search, state.groupFilter, state.hostnameSort),
-    [state.entries, state.search, state.groupFilter, state.hostnameSort],
+    () => filterAndSortEntries(state.entries, state.search, state.groupFilter, state.hostnameSort, state.favoritesFilter),
+    [state.entries, state.search, state.groupFilter, state.hostnameSort, state.favoritesFilter],
   );
 
   const groupEntries = useMemo(

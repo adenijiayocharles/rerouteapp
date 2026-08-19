@@ -108,6 +108,27 @@ describe("reducer: group filter", () => {
     expect(reducer(open, { type: "CLEAR_GROUP_FILTER" }).switchIpOpen).toBe(false);
   });
 
+  it("SELECT_FAVORITES sets favoritesFilter, switches to list view, and clears any group filter", () => {
+    const state = baseState({ view: "history", groupFilter: "Work" });
+    const next = reducer(state, { type: "SELECT_FAVORITES" });
+    expect(next).toMatchObject({ view: "list", favoritesFilter: true, groupFilter: null });
+  });
+
+  it("SELECT_GROUP clears favoritesFilter", () => {
+    const state = baseState({ favoritesFilter: true });
+    expect(reducer(state, { type: "SELECT_GROUP", group: "Work" }).favoritesFilter).toBe(false);
+  });
+
+  it("CLEAR_GROUP_FILTER also clears favoritesFilter", () => {
+    const state = baseState({ favoritesFilter: true });
+    expect(reducer(state, { type: "CLEAR_GROUP_FILTER" }).favoritesFilter).toBe(false);
+  });
+
+  it("GO_LIST clears favoritesFilter", () => {
+    const state = baseState({ favoritesFilter: true });
+    expect(reducer(state, { type: "GO_LIST" }).favoritesFilter).toBe(false);
+  });
+
   it("OPEN_ADD_PANEL seeds the new draft's group from the active group filter", () => {
     const state = baseState({ groupFilter: "Work" });
     const next = reducer(state, { type: "OPEN_ADD_PANEL" });

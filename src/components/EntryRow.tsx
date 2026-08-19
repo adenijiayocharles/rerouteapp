@@ -130,25 +130,11 @@ export const EntryRow = memo(function EntryRow({
 
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-          <button
-            onClick={() => onToggleFavorite(entryId)}
-            disabled={disabled}
-            title={entry.favorite ? "Remove from favourites" : "Add to favourites"}
-            style={{
-              flex: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 20,
-              height: 20,
-              border: "none",
-              background: "transparent",
-              cursor: disabled ? "not-allowed" : "pointer",
-              padding: 0,
-            }}
-          >
-            <StarIcon size={14} color={entry.favorite ? c.accent : c.textFaint} filled={entry.favorite} />
-          </button>
+          {entry.favorite && (
+            <span title="Favourite" style={{ display: "flex", flex: "none" }}>
+              <StarIcon size={13} color={c.accent} filled />
+            </span>
+          )}
           <div
             style={{
               fontFamily: "'JetBrains Mono',monospace",
@@ -367,6 +353,30 @@ export const EntryRow = memo(function EntryRow({
             >
               <CopyIcon size={13} />
               Duplicate
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onToggleFavorite(entryId);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "8px 9px",
+                borderRadius: 7,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: c.text,
+              }}
+            >
+              <StarIcon size={13} filled={entry.favorite} />
+              {entry.favorite ? "Remove from Favourites" : "Add to Favourites"}
             </button>
             <button
               onClick={() => {

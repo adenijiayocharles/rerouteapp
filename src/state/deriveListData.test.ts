@@ -35,6 +35,21 @@ describe("filterAndSortEntries", () => {
     expect(result.map((e) => e.id)).toEqual(["1", "2"]);
   });
 
+  it("filters to favourited entries when favoritesFilter is set", () => {
+    const withFavorites = [
+      makeEntry({ id: "1", hostname: "zeta.local", favorite: true }),
+      makeEntry({ id: "2", hostname: "alpha.local", favorite: false }),
+      makeEntry({ id: "3", hostname: "beta.local", favorite: true }),
+    ];
+    const result = filterAndSortEntries(withFavorites, "", null, "none", true);
+    expect(result.map((e) => e.id)).toEqual(["1", "3"]);
+  });
+
+  it("ignores favoritesFilter when it's false", () => {
+    const result = filterAndSortEntries(entries, "", null, "none", false);
+    expect(result.map((e) => e.id)).toEqual(["1", "2", "3"]);
+  });
+
   it("filters by hostname/comment search, case-insensitively", () => {
     const result = filterAndSortEntries(entries, "ALPHA", null, "none");
     expect(result.map((e) => e.id)).toEqual(["2"]);

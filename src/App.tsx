@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import "./App.css";
 import { createInitialState, reducer, type State } from "./state/appReducer";
 import type { Entry } from "./types";
@@ -59,6 +59,8 @@ export default function App() {
   const handleToggleHostnameSort = useCallback(() => dispatch({ type: "TOGGLE_HOSTNAME_SORT" }), []);
   const handleOpenAddPanel = useCallback(() => dispatch({ type: "OPEN_ADD_PANEL" }), []);
   const handleClearGroupFilter = useCallback(() => dispatch({ type: "CLEAR_GROUP_FILTER" }), []);
+  const handleSelectFavorites = useCallback(() => dispatch({ type: "SELECT_FAVORITES" }), []);
+  const favoritesCount = useMemo(() => state.entries.filter((e) => e.favorite).length, [state.entries]);
   const handleOpenSwitchIpModal = useCallback(() => dispatch({ type: "OPEN_SWITCH_IP_MODAL" }), []);
   const handleToggleIpMenu = useCallback((id: string) => dispatch({ type: "TOGGLE_IP_MENU", id }), []);
   const handleOpenEditPanel = useCallback((entry: Entry) => dispatch({ type: "OPEN_EDIT_PANEL", entry }), []);
@@ -109,6 +111,9 @@ export default function App() {
           groupFilter={state.groupFilter}
           onSelectGroup={(g) => dispatch({ type: "SELECT_GROUP", group: g })}
           onRenameGroup={entryFlow.handleRenameGroup}
+          favoritesCount={favoritesCount}
+          favoritesFilter={state.favoritesFilter}
+          onSelectFavorites={handleSelectFavorites}
         />
 
         {state.view === "list" ? (
@@ -118,13 +123,14 @@ export default function App() {
             totalEntryCount={state.entries.length}
             conflictsByEntry={conflictsByEntry}
             unreachableIps={state.unreachableIps}
-            unmanagedEntries={state.groupFilter ? [] : filteredUnmanagedEntries}
+            unmanagedEntries={state.groupFilter || state.favoritesFilter ? [] : filteredUnmanagedEntries}
             search={state.search}
             onSearchChange={handleSearchChange}
             hostnameSort={state.hostnameSort}
             onToggleHostnameSort={handleToggleHostnameSort}
             onAddClick={handleOpenAddPanel}
             groupFilter={state.groupFilter}
+            favoritesFilter={state.favoritesFilter}
             onClearGroupFilter={handleClearGroupFilter}
             onOpenSwitchIpModal={handleOpenSwitchIpModal}
             openIpMenuId={state.openIpMenuId}

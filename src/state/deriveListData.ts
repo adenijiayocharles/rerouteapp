@@ -10,16 +10,20 @@ function matchesSearch(haystack: { hostname: string; comment: string }, search: 
   return haystack.hostname.toLowerCase().includes(search) || (haystack.comment || "").toLowerCase().includes(search);
 }
 
-/** The list view's visible entries: group-filtered, search-filtered, then
- * optionally sorted by hostname. */
+/** The list view's visible entries: favourites/group-filtered,
+ * search-filtered, then optionally sorted by hostname. `groupFilter` and
+ * `favoritesFilter` are mutually exclusive (the sidebar only ever activates
+ * one at a time), so either may narrow the set but never both. */
 export function filterAndSortEntries(
   entries: Entry[],
   search: string,
   groupFilter: string | null,
   hostnameSort: "none" | "asc" | "desc",
+  favoritesFilter = false,
 ): Entry[] {
   const normalizedSearch = search.trim().toLowerCase();
   const filtered = entries.filter((e) => {
+    if (favoritesFilter && !e.favorite) return false;
     if (groupFilter && e.group !== groupFilter) return false;
     return matchesSearch(e, normalizedSearch);
   });

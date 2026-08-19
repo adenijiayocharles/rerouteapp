@@ -20,6 +20,7 @@ export interface State {
   search: string;
   hostnameSort: "none" | "asc" | "desc";
   groupFilter: string | null;
+  favoritesFilter: boolean;
   entries: Entry[];
   conflicts: Conflict[];
   unreachableIps: Record<string, string>;
@@ -97,6 +98,7 @@ export type Action =
   | { type: "SET_RAW_DRAFT_CONTENT"; content: string }
   | { type: "SELECT_GROUP"; group: string }
   | { type: "CLEAR_GROUP_FILTER" }
+  | { type: "SELECT_FAVORITES" }
   | { type: "RENAME_GROUP_FILTER"; oldName: string; newName: string }
   | { type: "SET_SEARCH"; value: string }
   | { type: "TOGGLE_HOSTNAME_SORT" }
@@ -145,6 +147,7 @@ export function createInitialState(browserDefaults: { themePreference: ThemePref
     search: "",
     hostnameSort: "none",
     groupFilter: null,
+    favoritesFilter: false,
     entries: [],
     conflicts: [],
     unreachableIps: {},
@@ -286,7 +289,7 @@ export function reducer(state: State, action: Action): State {
     case "SET_SYSTEM_PREFERS_DARK":
       return { ...state, systemPrefersDark: action.prefersDark };
     case "GO_LIST":
-      return { ...state, view: "list", groupFilter: null, switchIpOpen: false };
+      return { ...state, view: "list", groupFilter: null, favoritesFilter: false, switchIpOpen: false };
     case "GO_HISTORY":
       return { ...state, view: "history", switchIpOpen: false };
     case "GO_RAW":
@@ -296,9 +299,11 @@ export function reducer(state: State, action: Action): State {
     case "SET_RAW_DRAFT_CONTENT":
       return { ...state, rawDraftContent: action.content };
     case "SELECT_GROUP":
-      return { ...state, view: "list", groupFilter: action.group, switchIpOpen: false };
+      return { ...state, view: "list", groupFilter: action.group, favoritesFilter: false, switchIpOpen: false };
     case "CLEAR_GROUP_FILTER":
-      return { ...state, groupFilter: null, switchIpOpen: false };
+      return { ...state, groupFilter: null, favoritesFilter: false, switchIpOpen: false };
+    case "SELECT_FAVORITES":
+      return { ...state, view: "list", groupFilter: null, favoritesFilter: true, switchIpOpen: false };
     case "RENAME_GROUP_FILTER":
       return state.groupFilter === action.oldName ? { ...state, groupFilter: action.newName } : state;
     case "SET_SEARCH":
