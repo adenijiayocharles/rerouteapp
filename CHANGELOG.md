@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-19
+
+### Added
+
+- Duplicate an entry from its row's ⋮ menu — opens a pre-filled "Add entry" panel with the same hostname,
+  comment, group, enabled state, and IP addresses, ready to tweak before saving as a new entry.
+- Favouriting entries: a toggle in the row's ⋮ menu, a pinned "★ Favourites" section at the top of the menu-bar
+  tray (in addition to an entry's normal group listing), and a "Favourites" filter in the sidebar that works
+  like the existing group filters.
+
+### Changed
+
+- Hostname, IP, group, and search fields no longer offer browser autocomplete or auto-capitalization.
+
+### Fixed
+
+- The sidebar could show more than one item as active at once — e.g. "Hosts" stayed highlighted while a group
+  or the new Favourites filter was selected, and a selected group stayed highlighted after navigating to
+  History or Raw File. Only one sidebar item is now ever shown as active.
+
 ## [0.6.0] - 2026-08-18
 
 ### Added
@@ -208,7 +228,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.0...v0.5.1
