@@ -65,9 +65,9 @@ export function Sidebar({
       {favoritesCount > 0 && (
         <NavButton
           c={c}
-          active={favoritesFilter}
+          active={view === "list" && favoritesFilter}
           onClick={onSelectFavorites}
-          icon={<StarIcon color={favoritesFilter ? c.accent : c.textMuted} filled={favoritesFilter} />}
+          icon={<StarIcon color={view === "list" && favoritesFilter ? c.accent : c.textMuted} filled={view === "list" && favoritesFilter} />}
           label="Favourites"
           trailing={favoritesCount}
         />
@@ -107,7 +107,7 @@ export function Sidebar({
               key={g.name}
               c={c}
               group={g}
-              active={groupFilter === g.name}
+              active={view === "list" && groupFilter === g.name}
               onSelect={() => onSelectGroup(g.name)}
               onRename={(newName) => onRenameGroup(g.name, newName)}
             />
