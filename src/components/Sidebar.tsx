@@ -56,9 +56,9 @@ export function Sidebar({
     >
       <NavButton
         c={c}
-        active={view === "list"}
+        active={view === "list" && !groupFilter && !favoritesFilter}
         onClick={onGoList}
-        icon={<ListIcon color={view === "list" ? c.accent : c.textMuted} />}
+        icon={<ListIcon color={view === "list" && !groupFilter && !favoritesFilter ? c.accent : c.textMuted} />}
         label="Hosts"
         trailing={entryCount}
       />
