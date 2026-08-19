@@ -128,6 +128,7 @@ pub fn run() {
             commands::entries::switch_active_ip,
             commands::entries::switch_group_active_ip,
             commands::entries::toggle_enabled,
+            commands::entries::toggle_favorite,
             commands::entries::history_diff,
             commands::entries::preview_restore,
             commands::entries::confirm_restore,

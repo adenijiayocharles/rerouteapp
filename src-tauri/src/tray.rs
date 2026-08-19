@@ -77,6 +77,12 @@ fn build_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry>> {
         let placeholder = MenuItemBuilder::new("No enabled entries").enabled(false).build(app)?;
         menu.append(&placeholder)?;
     } else {
+        let favorites = favorite_entries(&enabled_entries);
+        if !favorites.is_empty() {
+            menu.append(&favorites_submenu(app, &favorites)?)?;
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        }
+
         for (group_name, members) in group_sections(&enabled_entries) {
             match group_name {
                 // Grouped entries nest inside their own submenu, so the top
@@ -131,6 +137,21 @@ fn group_sections<'a>(entries: &[&'a Entry]) -> Vec<(Option<&'a str>, Vec<&'a En
     }
 
     sections
+}
+
+/// Favourited entries for the tray's pinned "★ Favourites" section, sorted
+/// alphabetically by hostname like the rest of the tray's sections. Callers
+/// pass already-`enabled`-filtered entries, same as `group_sections`.
+fn favorite_entries<'a>(entries: &[&'a Entry]) -> Vec<&'a Entry> {
+    let mut favorites: Vec<&Entry> = entries.iter().copied().filter(|e| e.favorite).collect();
+    favorites.sort_by(|a, b| a.hostname.cmp(&b.hostname));
+    favorites
+}
+
+fn favorites_submenu(app: &AppHandle, entries: &[&Entry]) -> tauri::Result<Submenu<Wry>> {
+    let items: Vec<Submenu<Wry>> = entries.iter().map(|entry| entry_submenu(app, entry)).collect::<tauri::Result<_>>()?;
+    let refs: Vec<&dyn IsMenuItem<Wry>> = items.iter().map(|i| i as &dyn IsMenuItem<Wry>).collect();
+    Submenu::with_items(app, "\u{2605} Favourites", true, &refs)
 }
 
 fn group_submenu(app: &AppHandle, name: &str, entries: &[&Entry]) -> tauri::Result<Submenu<Wry>> {
@@ -250,10 +271,15 @@ mod tests {
             comment: String::new(),
             group: group.to_string(),
             enabled: true,
+            favorite: false,
             active_ip_id: String::new(),
             ips: Vec::new(),
             last_modified: String::new(),
         }
+    }
+
+    fn favorite_entry(id: &str, group: &str) -> Entry {
+        Entry { favorite: true, ..entry(id, group) }
     }
 
     #[test]
@@ -323,5 +349,33 @@ mod tests {
     fn no_entries_yields_no_sections() {
         let sections = group_sections(&[]);
         assert!(sections.is_empty());
+    }
+
+    #[test]
+    fn favorite_entries_excludes_non_favorited_entries() {
+        let entries = [entry("plain", ""), favorite_entry("starred", "")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let favorites = favorite_entries(&refs);
+
+        assert_eq!(favorites.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["starred"]);
+    }
+
+    #[test]
+    fn favorite_entries_sorts_alphabetically_by_hostname_across_groups() {
+        let entries = [favorite_entry("z-fav", "zebra"), favorite_entry("a-fav", "alpha")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        let favorites = favorite_entries(&refs);
+
+        assert_eq!(favorites.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["a-fav", "z-fav"]);
+    }
+
+    #[test]
+    fn favorite_entries_empty_when_none_favorited() {
+        let entries = [entry("a", ""), entry("b", "")];
+        let refs: Vec<&Entry> = entries.iter().collect();
+
+        assert!(favorite_entries(&refs).is_empty());
     }
 }

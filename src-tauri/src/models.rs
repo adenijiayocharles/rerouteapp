@@ -17,6 +17,7 @@ pub struct Entry {
     pub comment: String,
     pub group: String,
     pub enabled: bool,
+    pub favorite: bool,
     #[serde(rename = "activeIpId")]
     pub active_ip_id: String,
     pub ips: Vec<IpCandidate>,

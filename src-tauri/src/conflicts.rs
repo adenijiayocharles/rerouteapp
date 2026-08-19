@@ -95,6 +95,7 @@ mod tests {
             comment: String::new(),
             group: String::new(),
             enabled,
+            favorite: false,
             active_ip_id: "ip-1".to_string(),
             ips: vec![IpCandidate { id: "ip-1".to_string(), label: String::new(), ip: ip.to_string() }],
             last_modified: String::new(),

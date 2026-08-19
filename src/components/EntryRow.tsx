@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ColorTokens } from "../theme";
 import type { Entry } from "../types";
-import { CheckIcon, ChevronDownIcon, CopyIcon, EditIcon, MoreVerticalIcon, Spinner, TrashIcon, WarningIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, CopyIcon, EditIcon, MoreVerticalIcon, Spinner, StarIcon, TrashIcon, WarningIcon } from "./icons";
 
 interface EntryRowProps {
   c: ColorTokens;
@@ -15,6 +15,7 @@ interface EntryRowProps {
   unreachableIpId?: string;
   onToggleDropdown: (entryId: string) => void;
   onToggleEnabled: (entryId: string) => void;
+  onToggleFavorite: (entryId: string) => void;
   onEdit: (entry: Entry) => void;
   onDuplicate: (entry: Entry) => void;
   onDelete: (entryId: string) => void;
@@ -41,6 +42,7 @@ export const EntryRow = memo(function EntryRow({
   unreachableIpId,
   onToggleDropdown,
   onToggleEnabled,
+  onToggleFavorite,
   onEdit,
   onDuplicate,
   onDelete,
@@ -128,6 +130,25 @@ export const EntryRow = memo(function EntryRow({
 
       <div style={{ minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <button
+            onClick={() => onToggleFavorite(entryId)}
+            disabled={disabled}
+            title={entry.favorite ? "Remove from favourites" : "Add to favourites"}
+            style={{
+              flex: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 20,
+              height: 20,
+              border: "none",
+              background: "transparent",
+              cursor: disabled ? "not-allowed" : "pointer",
+              padding: 0,
+            }}
+          >
+            <StarIcon size={14} color={entry.favorite ? c.accent : c.textFaint} filled={entry.favorite} />
+          </button>
           <div
             style={{
               fontFamily: "'JetBrains Mono',monospace",

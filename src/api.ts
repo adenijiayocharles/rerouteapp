@@ -31,6 +31,7 @@ export const api = {
   switchGroupActiveIp: (group: string, ip: string) =>
     invoke<GroupWriteResult>("switch_group_active_ip", { group, ip }),
   toggleEnabled: (entryId: string) => invoke<WriteResult>("toggle_enabled", { entryId }),
+  toggleFavorite: (entryId: string) => invoke<Entry>("toggle_favorite", { entryId }),
 
   historyDiff: (historyId: string) => invoke<DiffPreview>("history_diff", { historyId }),
   previewRestore: (historyId: string) => invoke<DiffPreview>("preview_restore", { historyId }),

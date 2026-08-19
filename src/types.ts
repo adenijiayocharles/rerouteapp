@@ -10,6 +10,7 @@ export interface Entry {
   comment: string;
   group: string;
   enabled: boolean;
+  favorite: boolean;
   activeIpId: string;
   ips: IpCandidate[];
   lastModified: string;

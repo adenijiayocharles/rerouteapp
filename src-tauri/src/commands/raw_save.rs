@@ -251,6 +251,7 @@ mod tests {
             comment: String::new(),
             group: String::new(),
             enabled: true,
+            favorite: false,
             active_ip_id: "ip0".to_string(),
             ips: (0..ip_count)
                 .map(|i| IpCandidate { id: format!("ip{i}"), label: format!("label{i}"), ip: format!("10.0.0.{i}") })

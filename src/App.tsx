@@ -132,6 +132,7 @@ export default function App() {
             disabled={state.externalChangeDetected}
             onToggleDropdown={handleToggleIpMenu}
             onToggleEnabled={entryFlow.handleToggleEnabled}
+            onToggleFavorite={entryFlow.handleToggleFavorite}
             onEdit={handleOpenEditPanel}
             onDuplicate={handleDuplicateEntry}
             onDelete={handleDeleteFromRow}

@@ -383,6 +383,18 @@ export function useEntryWriteFlow(dispatch: Dispatch<Action>, state: State, refr
     [dispatch, refresh.refreshHistory, refresh.refreshConflicts, refresh.refreshHelperStatus],
   );
 
+  const handleToggleFavorite = useCallback(
+    async (entryId: string) => {
+      try {
+        const entry = await api.toggleFavorite(entryId);
+        dispatch({ type: "UPSERT_ENTRY", entry });
+      } catch (err) {
+        dispatch({ type: "SET_TOAST", toast: { type: "error", title: "Failed to update favourite", message: errorMessage(err) } });
+      }
+    },
+    [dispatch],
+  );
+
   const handleFlushDns = useCallback(async () => {
     dispatch({ type: "SET_TOAST", toast: { type: "info", title: "Flushing DNS…", message: "Flushing the local DNS resolver cache." } });
     try {
@@ -416,6 +428,7 @@ export function useEntryWriteFlow(dispatch: Dispatch<Action>, state: State, refr
     handleSwitchIp,
     handleSwitchGroupIp,
     handleToggleEnabled,
+    handleToggleFavorite,
     handleFlushDns,
   };
 }

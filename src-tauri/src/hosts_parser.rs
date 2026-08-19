@@ -356,6 +356,7 @@ mod tests {
             comment: comment.to_string(),
             group: String::new(),
             enabled,
+            favorite: false,
             active_ip_id: "ip1".to_string(),
             ips: vec![IpCandidate {
                 id: "ip1".to_string(),

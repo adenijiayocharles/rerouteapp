@@ -92,6 +92,25 @@ pub fn rename_group(app: AppHandle, state: State<AppState>, old_name: String, ne
     Ok(entries)
 }
 
+/// Toggles an entry's favourite flag, e.g. the star button on its row.
+/// Favourite is UI-only metadata — like `rename_group`, it's never written
+/// to the hosts file, so this skips the write pipeline entirely: no
+/// backup, no elevation, no history entry, just a DB update. Still syncs
+/// the tray, since the favourites section there needs to update immediately.
+#[tauri::command]
+pub fn toggle_favorite(app: AppHandle, state: State<AppState>, entry_id: String) -> Result<Entry, String> {
+    let conn = state.conn.lock_recover();
+    let before = store::get_entry(&conn, &entry_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Entry not found.".to_string())?;
+    let after = store::set_favorite(&conn, &entry_id, !before.favorite).map_err(|e| e.to_string())?;
+
+    let entries = store::list_entries(&conn).map_err(|e| e.to_string())?;
+    crate::tray::sync(&app, &entries);
+
+    Ok(after)
+}
+
 /// Computes the diff to show in the confirmation modal without writing
 /// anything. The frontend calls `confirm_save` with the same draft once
 /// the user approves.

@@ -107,6 +107,7 @@ fn draft_to_entry(id: &str, draft: &EntryDraft) -> Entry {
         comment: draft.comment.clone(),
         group: draft.group.trim().to_string(),
         enabled: draft.enabled,
+        favorite: false,
         active_ip_id: draft.active_uid.clone(),
         ips: draft
             .ips

@@ -15,6 +15,7 @@ function makeEntry(overrides: Partial<Entry> = {}): Entry {
     comment: "",
     group: "",
     enabled: true,
+    favorite: false,
     activeIpId: "ip1",
     ips: [{ id: "ip1", label: "primary", ip: "10.0.0.1" }],
     lastModified: "Just now",

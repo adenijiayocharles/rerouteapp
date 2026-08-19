@@ -45,7 +45,24 @@ pub fn init_db(conn: &Connection) -> rusqlite::Result<()> {
             value TEXT NOT NULL
         );
         ",
-    )
+    )?;
+    add_favorite_column_if_missing(conn)
+}
+
+/// `entries` may already exist (from before the favourite feature shipped)
+/// without a `favorite` column — `CREATE TABLE IF NOT EXISTS` above won't
+/// add it to an existing table, so it's migrated in separately, guarded by
+/// a check so this stays a no-op on every later startup.
+fn add_favorite_column_if_missing(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(entries)")?;
+    let has_favorite = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|name| name == "favorite");
+    if !has_favorite {
+        conn.execute("ALTER TABLE entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0", [])?;
+    }
+    Ok(())
 }
 
 pub fn get_setting(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
@@ -106,7 +123,7 @@ fn load_ips_for_entries(
 
 pub fn list_entries(conn: &Connection) -> rusqlite::Result<Vec<Entry>> {
     let mut stmt = conn.prepare(
-        "SELECT id, hostname, comment, group_name, enabled, active_ip_id, updated_at
+        "SELECT id, hostname, comment, group_name, enabled, active_ip_id, updated_at, favorite
          FROM entries ORDER BY order_index ASC",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -119,6 +136,7 @@ pub fn list_entries(conn: &Connection) -> rusqlite::Result<Vec<Entry>> {
             active_ip_id: row.get(5)?,
             ips: Vec::new(),
             last_modified: human_time(&row.get::<_, String>(6)?),
+            favorite: row.get::<_, i64>(7)? != 0,
         })
     })?;
     let mut entries: Vec<Entry> = rows.collect::<rusqlite::Result<_>>()?;
@@ -133,7 +151,7 @@ pub fn list_entries(conn: &Connection) -> rusqlite::Result<Vec<Entry>> {
 pub fn get_entry(conn: &Connection, id: &str) -> rusqlite::Result<Option<Entry>> {
     let result = conn
         .query_row(
-            "SELECT id, hostname, comment, group_name, enabled, active_ip_id, updated_at
+            "SELECT id, hostname, comment, group_name, enabled, active_ip_id, updated_at, favorite
              FROM entries WHERE id = ?1",
             params![id],
             |row| {
@@ -146,6 +164,7 @@ pub fn get_entry(conn: &Connection, id: &str) -> rusqlite::Result<Option<Entry>>
                     active_ip_id: row.get(5)?,
                     ips: Vec::new(),
                     last_modified: human_time(&row.get::<_, String>(6)?),
+                    favorite: row.get::<_, i64>(7)? != 0,
                 })
             },
         )
@@ -394,6 +413,14 @@ pub fn set_enabled(conn: &Connection, entry_id: &str, enabled: bool) -> rusqlite
     conn.execute(
         "UPDATE entries SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
         params![enabled as i64, now(), entry_id],
+    )?;
+    Ok(get_entry(conn, entry_id)?.expect("entry must exist"))
+}
+
+pub fn set_favorite(conn: &Connection, entry_id: &str, favorite: bool) -> rusqlite::Result<Entry> {
+    conn.execute(
+        "UPDATE entries SET favorite = ?1, updated_at = ?2 WHERE id = ?3",
+        params![favorite as i64, now(), entry_id],
     )?;
     Ok(get_entry(conn, entry_id)?.expect("entry must exist"))
 }
@@ -654,6 +681,80 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM ip_candidates", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn new_entries_are_not_favorited_by_default() {
+        let conn = setup();
+        let draft = EntryDraft {
+            id: None,
+            hostname: "api.test".to_string(),
+            comment: String::new(),
+            group: String::new(),
+            enabled: true,
+            active_uid: "ip1".to_string(),
+            ips: vec![IpDraft { uid: "ip1".to_string(), label: "primary".to_string(), ip: "127.0.0.1".to_string() }],
+        };
+        let entry = insert_entry(&conn, &draft).unwrap();
+        assert!(!entry.favorite);
+    }
+
+    #[test]
+    fn set_favorite_toggles_and_persists() {
+        let conn = setup();
+        let draft = EntryDraft {
+            id: None,
+            hostname: "api.test".to_string(),
+            comment: String::new(),
+            group: String::new(),
+            enabled: true,
+            active_uid: "ip1".to_string(),
+            ips: vec![IpDraft { uid: "ip1".to_string(), label: "primary".to_string(), ip: "127.0.0.1".to_string() }],
+        };
+        let entry = insert_entry(&conn, &draft).unwrap();
+
+        let favorited = set_favorite(&conn, &entry.id, true).unwrap();
+        assert!(favorited.favorite);
+        assert!(get_entry(&conn, &entry.id).unwrap().unwrap().favorite);
+
+        let unfavorited = set_favorite(&conn, &entry.id, false).unwrap();
+        assert!(!unfavorited.favorite);
+    }
+
+    #[test]
+    fn add_favorite_column_if_missing_is_idempotent_on_an_already_migrated_db() {
+        let conn = setup();
+        add_favorite_column_if_missing(&conn).unwrap();
+        add_favorite_column_if_missing(&conn).unwrap();
+    }
+
+    #[test]
+    fn init_db_migrates_a_pre_favorite_entries_table_from_an_older_install() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Mirrors the entries table shape before the favorite column existed.
+        conn.execute_batch(
+            "CREATE TABLE entries (
+                id TEXT PRIMARY KEY,
+                hostname TEXT NOT NULL,
+                comment TEXT NOT NULL DEFAULT '',
+                group_name TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                active_ip_id TEXT NOT NULL DEFAULT '',
+                order_index INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+             );
+             INSERT INTO entries (id, hostname, order_index, created_at, updated_at)
+             VALUES ('e1', 'legacy.test', 0, '2020-01-01', '2020-01-01');",
+        )
+        .unwrap();
+
+        init_db(&conn).unwrap();
+
+        let entry = get_entry(&conn, "e1").unwrap().unwrap();
+        assert!(!entry.favorite);
+        set_favorite(&conn, "e1", true).unwrap();
+        assert!(get_entry(&conn, "e1").unwrap().unwrap().favorite);
     }
 
     fn draft_in_group(hostname: &str, group: &str) -> EntryDraft {
