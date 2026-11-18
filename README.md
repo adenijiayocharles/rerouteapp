@@ -3,10 +3,10 @@
 
   # re:route
 
-  A cross-platform desktop app for managing your `/etc/hosts` file (or the Windows equivalent) through a GUI.
+  A macOS desktop app for managing your `/etc/hosts` file through a GUI.
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](#platform-support)
+  [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#platform-support)
 </div>
 
 ## What it does
@@ -25,21 +25,27 @@ re:route lets you manage host entries the way you'd want to, instead of hand-edi
 
 ## Platform support
 
+macOS only for now.
+
+<!-- Windows and Linux support (hidden for now):
 macOS-first. Windows and Linux are supported by the hosts-file engine and fall back to a per-write elevation
 prompt (UAC / `pkexec`) instead of the background helper daemon, but are less battle-tested — issues and PRs
 for those platforms are welcome.
+-->
 
 ## Installing
 
-Builds for all three platforms are published on the [Releases](https://github.com/adenijiayocharles/rerouteapp/releases)
-page:
+Builds are published on the [Releases](https://github.com/adenijiayocharles/rerouteapp/releases) page:
 
 - **macOS** — signed and notarized. Download the `.dmg` for your Mac's architecture (Apple Silicon or Intel)
   and drag re:route into Applications.
+
+<!-- Windows and Linux installers (hidden for now):
 - **Windows** — unsigned (no code-signing certificate yet), so Windows SmartScreen will warn on first launch;
   choose "More info" → "Run anyway". Download the `.msi` or the NSIS `.exe` installer.
 - **Linux** — unsigned, which is normal for Linux packages. Download the `.deb`, `.rpm`, or the AppImage for
   your distro.
+-->
 
 ## Building from source
 
@@ -88,15 +94,14 @@ pattern — see [`CLAUDE.md`](CLAUDE.md) and [`src-tauri/src/commands/CLAUDE.md`
 
 ## Releasing
 
-`.github/workflows/release.yml` builds and publishes all four release targets on a `v*` tag push, or via manual
-dispatch: macOS `aarch64-apple-darwin` and `x86_64-apple-darwin` (signed + notarized), Windows (unsigned), and
-Linux (unsigned). The macOS legs also build and bundle `reroute-helper`, signed with the same Developer ID as
-the app, since it runs standalone (outside the app bundle) as root — Windows and Linux don't build the helper
-daemon at all (see [Platform support](#platform-support)).
+`.github/workflows/release.yml` builds and publishes the macOS release targets on a `v*` tag push, or via manual
+dispatch: `aarch64-apple-darwin` and `x86_64-apple-darwin` (signed + notarized). The macOS legs also build and
+bundle `reroute-helper`, signed with the same Developer ID as the app, since it runs standalone (outside the
+app bundle) as root. (Windows and Linux legs are commented out in the workflow.)
 
 Required repo secrets (Settings → Secrets and variables → Actions). The `APPLE_*` secrets are only used by the
 macOS legs (from an [Apple Developer Program](https://developer.apple.com/programs/) membership); the
-`TAURI_SIGNING_*` secrets sign updater artifacts on all four legs:
+`TAURI_SIGNING_*` secrets sign updater artifacts on every leg:
 
 | Secret | Where to get it |
 | --- | --- |
