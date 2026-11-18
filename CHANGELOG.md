@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-18
+
+### Changed
+
+- re:route is now macOS-only. Windows and Linux builds are no longer published; the last release for those
+  platforms is 0.7.0.
+
 ## [0.7.0] - 2026-08-19
 
 ### Added
@@ -228,7 +235,8 @@ Initial release.
 - False "external change" banner appearing after in-app writes.
 - Various backend performance, concurrency, and data-safety issues found in review.
 
-[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/adenijiayocharles/rerouteapp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.7.0...v1.0.0
 [0.7.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/adenijiayocharles/rerouteapp/compare/v0.5.1...v0.5.2
